@@ -1,0 +1,1997 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Taskbar Pokémon</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>html,body{margin:0;background:#0d0d1a}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const {useState,useEffect,useRef,Component}=React;
+
+// ═══ TASKBAR POKÉMON — Phase 1 (Kanto, 151) ═══
+const TICK=100, SHINY_RATE=1/4096, WAVES=10;
+
+const TC={Normal:"#A8A878",Fire:"#F08030",Water:"#6890F0",Electric:"#F8D030",Grass:"#78C850",Ice:"#98D8D8",Fighting:"#C03028",Poison:"#A040A0",Ground:"#E0C068",Flying:"#A890F0",Psychic:"#F85888",Bug:"#A8B820",Rock:"#B8A038",Ghost:"#705898",Dragon:"#7038F8",Dark:"#705848",Steel:"#B8B8D0",Fairy:"#EE99AC"};
+const EFF={Normal:{Rock:.5,Steel:.5,Ghost:0},Fire:{Fire:.5,Water:.5,Rock:.5,Dragon:.5,Grass:2,Ice:2,Bug:2,Steel:2},Water:{Water:.5,Grass:.5,Dragon:.5,Fire:2,Ground:2,Rock:2},Electric:{Electric:.5,Grass:.5,Dragon:.5,Ground:0,Flying:2,Water:2},Grass:{Fire:.5,Grass:.5,Poison:.5,Flying:.5,Bug:.5,Dragon:.5,Steel:.5,Water:2,Ground:2,Rock:2},Ice:{Water:.5,Ice:.5,Fire:.5,Steel:.5,Grass:2,Ground:2,Flying:2,Dragon:2},Fighting:{Normal:2,Ice:2,Rock:2,Dark:2,Steel:2,Poison:.5,Bug:.5,Psychic:.5,Ghost:0,Flying:.5,Fairy:.5},Poison:{Poison:.5,Ground:.5,Rock:.5,Ghost:.5,Steel:0,Grass:2,Fairy:2},Ground:{Grass:.5,Bug:.5,Flying:0,Fire:2,Electric:2,Poison:2,Rock:2,Steel:2},Flying:{Electric:.5,Rock:.5,Steel:.5,Grass:2,Fighting:2,Bug:2},Psychic:{Psychic:.5,Steel:.5,Dark:0,Fighting:2,Poison:2},Bug:{Fire:.5,Flying:.5,Rock:.5,Ghost:.5,Steel:.5,Fairy:.5,Poison:.5,Fighting:.5,Grass:2,Psychic:2,Dark:2},Rock:{Fighting:.5,Ground:.5,Steel:.5,Fire:2,Flying:2,Ice:2,Bug:2},Ghost:{Normal:0,Dark:.5,Psychic:2,Ghost:2},Dragon:{Steel:.5,Fairy:0,Dragon:2},Dark:{Fighting:.5,Dark:.5,Fairy:.5,Psychic:2,Ghost:2},Steel:{Fire:.5,Water:.5,Electric:.5,Steel:.5,Ice:2,Rock:2,Fairy:2},Fairy:{Fire:.5,Poison:.5,Steel:.5,Fighting:2,Dragon:2,Dark:2}};
+const TYPE_FR={Normal:"Normal",Fire:"Feu",Water:"Eau",Electric:"Électrik",Grass:"Plante",Ice:"Glace",Fighting:"Combat",Poison:"Poison",Ground:"Sol",Flying:"Vol",Psychic:"Psy",Bug:"Insecte",Rock:"Roche",Ghost:"Spectre",Dragon:"Dragon",Dark:"Ténèbres",Steel:"Acier",Fairy:"Fée"};
+const TYPE_EMOJI={Normal:"💥",Fire:"🔥",Water:"💧",Electric:"⚡",Grass:"🍃",Ice:"❄️",Fighting:"👊",Poison:"☠️",Ground:"🌋",Flying:"🌪️",Psychic:"🔮",Bug:"🐛",Rock:"🪨",Ghost:"👻",Dragon:"🐉",Dark:"🌑",Steel:"⚙️",Fairy:"✨"};
+const tEff=(a,d1,d2)=>(EFF[a]?.[d1]??1)*((d2?EFF[a]?.[d2]:1)??1);
+
+// Moves: [power,type,cooldown ms]
+// [puissance, type, cadence(ms), catégorie ("P"hysique/"S"péciale/"St"atut), précision, effets]
+// effets: drain(%soin), recoil(%recul), selfKO, brn/par/frz/psn/slp(% statut), tDn/tUp:[stat,%], sDn/sUp:[stat,%](soi), aoe, healAlly, healSelf, steal, none
+const MV={
+"Tackle":[40,"Normal",2000,"P",100],"Scratch":[40,"Normal",1900,"P",100],"Pound":[40,"Normal",1900,"P",100],
+"Quick Attack":[40,"Normal",1300,"P",100],"Body Slam":[85,"Normal",2800,"P",100,{par:30}],
+"Hyper Beam":[150,"Normal",5500,"S",90],"Swift":[60,"Normal",2200,"S",999],"Slash":[70,"Normal",2300,"P",100],
+"Fury Attack":[25,"Normal",1200,"P",85],"Stomp":[65,"Normal",2200,"P",100],"Take Down":[90,"Normal",3000,"P",85,{recoil:25}],
+"Headbutt":[70,"Normal",2400,"P",100],"Egg Bomb":[100,"Normal",3200,"P",75],"Horn Attack":[65,"Normal",2200,"P",100],
+"Flail":[60,"Normal",2200,"P",100],"Comet Punch":[60,"Normal",1800,"P",85],"Vice Grip":[55,"Normal",2000,"P",100],
+"Self-Destruct":[200,"Normal",7000,"P",100,{selfKO:1,aoe:1}],"Explosion":[250,"Normal",8000,"P",100,{selfKO:1,aoe:1}],
+"Splash":[0,"Normal",3000,"St",999,{none:1}],"Harden":[0,"Normal",3500,"St",999,{sUp:["def",100]}],
+"Hyper Fang":[80,"Normal",2800,"P",90],"Sing":[0,"Normal",3500,"St",55,{slp:100}],
+"Growl":[0,"Normal",4200,"St",100,{tDn:["atk",100]}],"Tail Whip":[0,"Normal",4200,"St",100,{tDn:["def",100]}],
+"Leer":[0,"Normal",4200,"St",100,{tDn:["def",100]}],"Smokescreen":[0,"Normal",4200,"St",100,{tDn:["atk",100]}],
+"Defense Curl":[0,"Normal",4500,"St",999,{sUp:["def",100]}],"Recover":[0,"Normal",9000,"St",999,{healSelf:50}],
+"Vine Whip":[45,"Grass",1800,"P",100],"Razor Leaf":[55,"Grass",2100,"P",95,{aoe:1}],
+"Solar Beam":[120,"Grass",5000,"S",100],"Absorb":[20,"Grass",1800,"S",100,{drain:50}],
+"Mega Drain":[40,"Grass",2200,"S",100,{drain:50}],"Giga Drain":[75,"Grass",2600,"S",100,{drain:50}],
+"Petal Dance":[120,"Grass",4500,"S",100],"Power Whip":[120,"Grass",4000,"P",85],
+"Ember":[40,"Fire",2200,"S",100,{brn:10}],"Flamethrower":[90,"Fire",3000,"S",100,{brn:10}],
+"Fire Blast":[110,"Fire",4000,"S",85,{brn:10}],"Flare Blitz":[120,"Fire",4000,"P",100,{recoil:33,brn:10}],
+"Water Gun":[40,"Water",2200,"S",100],"Bubble":[40,"Water",2200,"S",100,{tDn:["spe",10],aoe:1}],
+"Surf":[90,"Water",3000,"S",100,{aoe:1}],"Hydro Pump":[110,"Water",4000,"S",80],
+"Aqua Tail":[90,"Water",3000,"P",90],"Aqua Jet":[40,"Water",1500,"P",100],"Crabhammer":[100,"Water",3500,"P",90],
+"Water Pulse":[60,"Water",2400,"S",100],"Withdraw":[0,"Water",4500,"St",999,{sUp:["def",100]}],
+"Thunder Shock":[40,"Electric",2200,"S",100,{par:10}],"Thunderbolt":[90,"Electric",3000,"S",100,{par:10}],
+"Thunder":[110,"Electric",4000,"S",70,{par:30}],"Shock Wave":[60,"Electric",2400,"S",999],
+"Ice Beam":[90,"Ice",3000,"S",100,{frz:10}],"Blizzard":[110,"Ice",4000,"S",70,{frz:10,aoe:1}],
+"Ice Punch":[75,"Ice",2500,"P",100,{frz:10}],"Aurora Beam":[65,"Ice",2500,"S",100,{tDn:["atk",10]}],
+"Karate Chop":[50,"Fighting",1800,"P",100],"Brick Break":[75,"Fighting",2500,"P",100],
+"Cross Chop":[100,"Fighting",3500,"P",80],"Close Combat":[120,"Fighting",4000,"P",100,{sDn:["def",100]}],
+"Mach Punch":[40,"Fighting",1300,"P",100],"High Jump Kick":[130,"Fighting",4500,"P",90],
+"Double Kick":[60,"Fighting",2000,"P",100],"Focus Blast":[120,"Fighting",4500,"S",70,{tDn:["spd",10]}],
+"Aura Sphere":[80,"Fighting",2800,"S",999],
+"Poison Sting":[15,"Poison",1500,"P",100,{psn:30}],"Sludge":[65,"Poison",2500,"S",100,{psn:30}],
+"Sludge Bomb":[90,"Poison",3000,"S",100,{psn:30}],"Gunk Shot":[120,"Poison",4000,"P",80,{psn:30}],
+"Acid":[40,"Poison",2200,"S",100,{tDn:["spd",10],aoe:1}],
+"Confusion":[50,"Psychic",2200,"S",100],"Psybeam":[65,"Psychic",2500,"S",100],
+"Psychic":[90,"Psychic",3000,"S",100,{tDn:["spd",10]}],"Psystrike":[100,"Psychic",3500,"S",100],
+"Heal Pulse":[0,"Psychic",5200,"St",999,{healAlly:30}],
+"Lick":[30,"Ghost",1800,"P",100,{par:30}],"Night Shade":[50,"Ghost",2200,"S",100],
+"Shadow Ball":[80,"Ghost",3000,"S",100,{tDn:["spd",20]}],"Shadow Force":[120,"Ghost",4500,"P",100],
+"Rock Throw":[50,"Rock",2000,"P",90],"Rock Slide":[75,"Rock",2800,"P",90,{aoe:1}],
+"Stone Edge":[100,"Rock",3500,"P",80],
+"Mud Shot":[55,"Ground",2200,"S",95,{tDn:["spe",100]}],"Earthquake":[100,"Ground",3500,"P",100,{aoe:1}],
+"Bone Club":[65,"Ground",2500,"P",85],"Bonemerang":[50,"Ground",2000,"P",90],
+"Sand Attack":[0,"Ground",4200,"St",100,{tDn:["atk",100]}],
+"Gust":[40,"Flying",2200,"S",100],"Wing Attack":[60,"Flying",2200,"P",100],
+"Aerial Ace":[60,"Flying",2200,"P",999],"Fly":[90,"Flying",3500,"P",95],
+"Drill Peck":[80,"Flying",3000,"P",100],"Peck":[35,"Flying",1900,"P",100],
+"Bite":[60,"Dark",2200,"P",100],"Crunch":[80,"Dark",3000,"P",100,{tDn:["def",20]}],
+"Thief":[60,"Dark",2400,"P",100,{steal:1}],
+"Dragon Rage":[50,"Dragon",2500,"S",100],"Dragon Claw":[80,"Dragon",3000,"P",100],
+"Dragon Pulse":[85,"Dragon",3000,"S",100],"Dragon Rush":[100,"Dragon",3500,"P",75],
+"Outrage":[120,"Dragon",4500,"P",100],
+"Bug Bite":[60,"Bug",2000,"P",100],"X-Scissor":[80,"Bug",2800,"P",100],"Bug Buzz":[90,"Bug",3000,"S",100,{tDn:["spd",10]}],
+"String Shot":[0,"Bug",2500,"St",95,{tDn:["spe",100]}],
+"Disarming Voice":[40,"Fairy",2200,"S",999],"Moonblast":[95,"Fairy",3200,"S",100,{tDn:["spa",30]}],
+"Dazzling Gleam":[80,"Fairy",3000,"S",100,{aoe:1}],
+"Iron Head":[80,"Steel",3000,"P",100],"Metal Claw":[50,"Steel",2000,"P",95,{sUp:["atk",10]}],
+"Flash Cannon":[80,"Steel",3000,"S",100,{tDn:["spd",10]}],
+};
+
+
+// Attaques supplémentaires (statuts officiels + CT d'arènes)
+
+// Effet des attaques de statut
+const isAOE=mv=>!!(MV[mv]&&MV[mv][5]&&MV[mv][5].aoe);
+const MFX=mv=>MV[mv]&&MV[mv][5]||null;
+const isStatus=mv=>MV[mv]&&MV[mv][3]==="St";
+const STATUS_FR={brn:"Brûlé",par:"Paralysé",frz:"Gelé",psn:"Empoisonné",slp:"Endormi"};
+const STATUS_BADGE={brn:["brl","#e07020"],par:["par","#d8b820"],frz:["GEL","#4090d8"],psn:["poi","#8040a0"],slp:["som","#e080a8"]};
+
+// Noms français des attaques
+const FRN={"Tackle":"Charge","Scratch":"Griffe","Pound":"Écras'Face","Quick Attack":"Vive-Attaque","Body Slam":"Plaquage","Hyper Beam":"Ultralaser","Swift":"Météores","Slash":"Tranche","Fury Attack":"Furie","Stomp":"Écrasement","Take Down":"Bélier","Headbutt":"Coup d'Boule","Egg Bomb":"Bombe Œuf","Horn Attack":"Koud'Korne","Flail":"Fléau","Comet Punch":"Poing Comète","Vice Grip":"Force Poigne","Self-Destruct":"Destruction","Explosion":"Explosion","Splash":"Trempette","Harden":"Armure","Vine Whip":"Fouet Lianes","Razor Leaf":"Tranch'Herbe","Solar Beam":"Lance-Soleil","Absorb":"Vol-Vie","Mega Drain":"Méga-Sangsue","Petal Dance":"Danse-Fleur","Power Whip":"Mégafouet","Ember":"Flammèche","Flamethrower":"Lance-Flammes","Fire Blast":"Déflagration","Flare Blitz":"Boutefeu","Water Gun":"Pistolet à O","Bubble":"Écume","Surf":"Surf","Hydro Pump":"Hydrocanon","Aqua Tail":"Hydroqueue","Aqua Jet":"Aqua-Jet","Crabhammer":"Pince-Masse","Thunder Shock":"Éclair","Thunderbolt":"Tonnerre","Thunder":"Fatal-Foudre","Flash Cannon":"Luminocanon","Ice Beam":"Laser Glace","Blizzard":"Blizzard","Ice Punch":"Poing-Glace","Karate Chop":"Poing-Karaté","Brick Break":"Casse-Brique","Cross Chop":"Coup-Croix","Close Combat":"Close Combat","Mach Punch":"Mach Punch","High Jump Kick":"Pied Voltige","Double Kick":"Double Pied","Focus Blast":"Exploforce","Aura Sphere":"Aurasphère","Poison Sting":"Dard-Venin","Sludge":"Détritus","Sludge Bomb":"Bombe Beurk","Gunk Shot":"Détricanon","Acid":"Acide","Confusion":"Choc Mental","Psybeam":"Rafale Psy","Psychic":"Psyko","Psystrike":"Frappe Psy","Lick":"Léchouille","Night Shade":"Ombre Nocturne","Shadow Ball":"Ball'Ombre","Shadow Force":"Revenant","Rock Throw":"Jet-Pierres","Rock Slide":"Éboulement","Stone Edge":"Lame de Roc","Mud Shot":"Tir de Boue","Earthquake":"Séisme","Bone Club":"Massd'Os","Bonemerang":"Osmerang","Gust":"Tornade","Wing Attack":"Cru-Aile","Aerial Ace":"Aéropique","Fly":"Vol","Drill Peck":"Bec Vrille","Peck":"Picpic","Bite":"Morsure","Crunch":"Mâchouille","Dragon Rage":"Draco-Rage","Dragon Claw":"Dracogriffe","Dragon Pulse":"Dracochoc","Dragon Rush":"Dracocharge","Outrage":"Colère","Bug Bite":"Piqûre","X-Scissor":"Plaie Croix","Bug Buzz":"Bourdon","Disarming Voice":"Voix Enjôleuse","Moonblast":"Pouvoir Lunaire","Dazzling Gleam":"Éclat Magique","Iron Head":"Tête de Fer","Metal Claw":"Griffe Acier","String Shot":"Sécrétion","Sing":"Berceuse","Aurora Beam":"Onde Boréale","Growl":"Rugissement","Tail Whip":"Mimi-Queue","Leer":"Groz'Yeux","Sand Attack":"Jet de Sable","Smokescreen":"Brouillard","Withdraw":"Repli","Defense Curl":"Boul'Armure","Recover":"Soin","Water Pulse":"Vibraqua","Shock Wave":"Onde de Choc","Giga Drain":"Giga-Sangsue","Hyper Fang":"Croc de Mort","Thief":"Larcin","Heal Pulse":"Vibra Soin"};
+const frn=m=>FRN[m]||m;
+const NAT={Hardy:{},Lonely:{atk:1.1,def:.9},Brave:{atk:1.1,spe:.9},Adamant:{atk:1.1,spa:.9},Naughty:{atk:1.1,spd:.9},Bold:{def:1.1,atk:.9},Docile:{},Relaxed:{def:1.1,spe:.9},Impish:{def:1.1,spa:.9},Lax:{def:1.1,spd:.9},Timid:{spe:1.1,atk:.9},Hasty:{spe:1.1,def:.9},Serious:{},Jolly:{spe:1.1,spa:.9},Naive:{spe:1.1,spd:.9},Modest:{spa:1.1,atk:.9},Mild:{spa:1.1,def:.9},Quiet:{spa:1.1,spe:.9},Bashful:{},Rash:{spa:1.1,spd:.9},Calm:{spd:1.1,atk:.9},Gentle:{spd:1.1,def:.9},Sassy:{spd:1.1,spe:.9},Careful:{spd:1.1,spa:.9},Quirky:{}};
+const NATS=Object.keys(NAT);
+const NAT_FR={Hardy:"Hardi",Lonely:"Solo",Brave:"Brave",Adamant:"Rigide",Naughty:"Mauvais",Bold:"Assuré",Docile:"Docile",Relaxed:"Relax",Impish:"Malin",Lax:"Lâche",Timid:"Timide",Hasty:"Pressé",Serious:"Sérieux",Jolly:"Jovial",Naive:"Naïf",Modest:"Modeste",Mild:"Doux",Quiet:"Discret",Bashful:"Pudique",Rash:"Foufou",Calm:"Calme",Gentle:"Gentil",Sassy:"Malpoli",Careful:"Prudent",Quirky:"Bizarre"};
+const STAT_FR={atk:"Attaque",def:"Défense",spa:"Att. Spé.",spd:"Déf. Spé.",spe:"Vitesse",hp:"PV"};
+function natDesc(n){const e=NAT[n];const up=Object.keys(e).find(k=>e[k]>1),dn=Object.keys(e).find(k=>e[k]<1);
+  return up?`+10% ${STAT_FR[up]} · −10% ${STAT_FR[dn]}`:"Neutre (aucun effet sur les stats)";}
+const ABI_DESC={"Engrais":"Renforce les attaques Plante quand les PV sont bas.","Brasier":"Renforce les attaques Feu quand les PV sont bas.","Torrent":"Renforce les attaques Eau quand les PV sont bas.","Ramassage":"Peut ramasser des PokéDollars et les objets tenus par les ennemis vaincus. ✅ Actif","Statik":"Peut paralyser l'attaquant au contact.","Intimidation":"Baisse l'Attaque de l'ennemi à l'entrée.","Lévitation":"Immunisé contre les attaques Sol.","Fermeté":"Ne peut pas être mis K.O. d'un coup.","Tête de Roc":"Ne subit pas de dégâts de recul.","Mue":"Peut soigner ses altérations de statut.","Isograisse":"Réduit les dégâts Feu et Glace subis.","Écran Poudre":"Protège des effets secondaires des attaques.","Regard Vif":"La Précision ne peut pas baisser.","Cran":"Augmente l'Attaque en cas d'altération.","Synchro":"Transmet ses altérations à l'ennemi.","Attention":"Empêche d'être apeuré.","Charme":"Peut charmer l'attaquant au contact.","Garde Magik":"Ne subit que les dégâts d'attaques directes.","Pression":"L'ennemi consomme plus de PP.","Multiécaille":"Réduit les dégâts quand les PV sont pleins.","Absorb Eau":"Régénère des PV face aux attaques Eau.","Absorb Volt":"Régénère des PV face aux attaques Électrik.","Torche":"Renforce le Feu si touché par une attaque Feu.","Paratonnerre":"Attire et annule les attaques Électrik.","Voile Sable":"Esquive améliorée dans les tempêtes de sable.","Point Poison":"Peut empoisonner au contact.","Rivalité":"Plus de dégâts contre le même genre.","Chlorophylle":"Vitesse doublée au soleil.","Pose Spore":"Peut endormir/paralyser/empoisonner au contact.","Peau Sèche":"Régénère sous la pluie, souffre au soleil.","Œil Composé":"Augmente la Précision.","Lentiteintée":"Les attaques « peu efficaces » font plus de dégâts.","Fuite":"Peut toujours fuir les combats sauvages.","Insomnia":"Ne peut pas s'endormir.","Anticipation":"Détecte les attaques dangereuses.","Hyper Cutter":"L'Attaque ne peut pas baisser.","Coque Armure":"Ne subit pas de coups critiques.","Armurbaston":"Ne subit pas de coups critiques.","Glissade":"Vitesse doublée sous la pluie.","Sniper":"Coups critiques renforcés.","Esprit Vital":"Ne peut pas s'endormir.","Colérique":"Attaque max si coup critique subi.","Moiteur":"Empêche les explosions.","Ciel Gris":"Annule les effets de la météo.","Benêt":"Immunisé contre la provocation.","Tempo Perso":"Ne peut pas être confus.","Magnépiège":"Piège les Pokémon Acier.","Anti-Bruit":"Immunisé contre les attaques sonores.","Récolte":"Peut réutiliser une Baie.","Sérénité":"Double les effets secondaires.","Médic Nature":"Se soigne en quittant le combat.","Lumiattirance":"Attire les Pokémon sauvages.","Souplesse":"Ne peut pas être paralysé.","Technicien":"Renforce les attaques faibles (≤60).","Querelleur":"Touche les Spectres avec Normal/Combat.","Matinal":"Se réveille deux fois plus vite.","Poing de Fer":"Renforce les attaques de poing.","Téméraire":"Renforce les attaques avec recul.","Adaptabilité":"STAB augmenté (×2 au lieu de ×1,5).","Imposteur":"Se transforme en l'ennemi.","Calque":"Copie le talent de l'ennemi.","Télécharge":"Booste selon la défense ennemie.","Corps Ardent":"Peut brûler au contact.","Corps Maudit":"Peut bloquer l'attaque reçue.","Infiltration":"Ignore les protections.","Suintement":"Blesse les voleurs de PV.","Corps Sain":"Les stats ne peuvent pas baisser.","Gloutonnerie":"Mange sa Baie plus tôt.","Voile Eau":"Ne peut pas être brûlé.","Hydratation":"Se soigne sous la pluie.","Écaille Spé.":"Réduit les dégâts avec une altération.","Piège Sable":"Empêche la fuite au sol.","Pieds Confus":"Esquive améliorée si confus.","Battant":"Att. Spé. +2 si une stat baisse.","Force Soleil":"Att. Spé. +50% au soleil, perd des PV.","Cuvette":"Régénère des PV sous la pluie.","Rain Dish":"Régénère des PV sous la pluie.","Solar Power":"Att. Spé. +50% au soleil.","Sécheresse":"Invoque le soleil.","Puanteur":"Peut apeurer au contact.","Glu":"L'objet tenu ne peut pas être volé.","Filtre":"Réduit les dégâts « super efficaces ».","Annule Garde":"Toutes les attaques touchent.","Feuille Garde":"Pas d'altération au soleil.","Multi-Coups":"Les attaques multiples touchent 5 fois.","Phobique":"Vitesse +1 face à Insecte/Spectre/Ténèbres.","Impudence":"Attaque +1 après chaque K.O.","Forewarn":"Détecte une attaque ennemie.","Shed Skin":"Peut soigner ses altérations.","Run Away":"Peut toujours fuir.","Inner Focus":"Empêche d'être apeuré.","Keen Eye":"La Précision ne peut pas baisser."};
+function abiDesc(a){return ABI_DESC[a]||"Talent passif (effet non implémenté pour l'instant).";}
+function mvDesc(mv){const md=MV[mv];if(!md)return"";
+  const[pw,ty,cd,cat,acc]=md;const fx=md[5]||{};
+  const L=[];
+  L.push(`Type ${TYPE_FR[ty]} · ${cat==="P"?"Physique 👊":cat==="S"?"Spéciale 🔮":"Statut"}`);
+  if(pw>0)L.push(`Puissance ${pw}`);
+  L.push(`Précision ${acc>=999?"— (n'échoue jamais)":acc+"%"}`);
+  L.push(`Cadence ${(cd/1000).toFixed(1)}s`);
+  const E=[];
+  if(fx.aoe)E.push("Touche TOUS les adversaires (75% des dégâts chacun)");
+  if(fx.drain)E.push(`Soigne le lanceur de ${fx.drain}% des dégâts infligés`);
+  if(fx.recoil)E.push(`Le lanceur subit ${fx.recoil}% des dégâts en recul`);
+  if(fx.selfKO)E.push("Le lanceur tombe K.O. après usage !");
+  if(fx.brn)E.push(`${fx.brn}% de chances de BRÛLER la cible`);
+  if(fx.par)E.push(`${fx.par}% de chances de PARALYSER la cible`);
+  if(fx.frz)E.push(`${fx.frz}% de chances de GELER la cible`);
+  if(fx.psn)E.push(`${fx.psn}% de chances d'EMPOISONNER la cible`);
+  if(fx.slp)E.push(`Endort la cible`);
+  if(fx.tDn)E.push(`${fx.tDn[1]}% de chances de baisser ${STAT_FR[fx.tDn[0]]} de la cible`);
+  if(fx.tUp)E.push(`Augmente ${STAT_FR[fx.tUp[0]]} de la cible`);
+  if(fx.sUp)E.push(`Augmente ${STAT_FR[fx.sUp[0]]} du lanceur`);
+  if(fx.sDn)E.push(`Baisse ${STAT_FR[fx.sDn[0]]} du lanceur après usage`);
+  if(fx.healSelf)E.push(`Le lanceur récupère ${fx.healSelf}% de ses PV max`);
+  if(fx.healAlly)E.push(`Soigne l'allié le plus blessé de ${fx.healAlly}% de ses PV max`);
+  if(fx.steal)E.push("Vole l'objet tenu de la cible si le lanceur n'en porte pas");
+  if(fx.none)E.push("...n'a absolument aucun effet.");
+  return L.join(" · ")+(E.length?`\n\n💡 ${E.join(". ")}.`:"");
+}
+
+
+// [id,name,t1,t2,hp,atk,def,spa,spd,spe,evoLv(0=none/-1=item→lvl36 simulé),evoTo,ab1,ab2,m1,m2,m3,m4]
+const RAW=[
+[1,"Bulbizarre","Grass","Poison",45,49,49,65,65,45,16,2,"Engrais","Chlorophylle","Vine Whip","Razor Leaf","Sludge Bomb","Solar Beam"],
+[2,"Herbizarre","Grass","Poison",60,62,63,80,80,60,32,3,"Engrais","Chlorophylle","Vine Whip","Razor Leaf","Sludge Bomb","Solar Beam"],
+[3,"Florizarre","Grass","Poison",80,82,83,100,100,80,0,0,"Engrais","Chlorophylle","Razor Leaf","Sludge Bomb","Solar Beam","Hyper Beam"],
+[4,"Salamèche","Fire",null,39,52,43,60,50,65,16,5,"Brasier","Force Soleil","Scratch","Ember","Flamethrower","Fire Blast"],
+[5,"Reptincel","Fire",null,58,64,58,80,65,80,36,6,"Brasier","Force Soleil","Ember","Slash","Flamethrower","Fire Blast"],
+[6,"Dracaufeu","Fire","Flying",78,84,78,109,85,100,0,0,"Brasier","Force Soleil","Flamethrower","Slash","Fire Blast","Hyper Beam"],
+[7,"Carapuce","Water",null,44,48,65,50,64,43,16,8,"Torrent","Cuvette","Tackle","Water Gun","Surf","Hydro Pump"],
+[8,"Carabaffe","Water",null,59,63,80,65,80,58,36,9,"Torrent","Cuvette","Water Gun","Bite","Surf","Hydro Pump"],
+[9,"Tortank","Water",null,79,83,100,85,105,78,0,0,"Torrent","Cuvette","Surf","Bite","Hydro Pump","Hyper Beam"],
+[10,"Chenipan","Bug",null,45,30,35,20,20,45,7,11,"Écran Poudre","Fuite","Tackle","String Shot","Bug Bite","Tackle"],
+[11,"Chrysacier","Bug",null,50,20,55,25,25,30,10,12,"Mue",null,"Tackle","Harden","Tackle","Harden"],
+[12,"Papilusion","Bug","Flying",60,45,50,90,80,70,0,0,"Œil Composé","Lentiteintée","Confusion","Psychic","Bug Buzz","Gust"],
+[13,"Aspicot","Bug","Poison",40,35,30,20,20,50,7,14,"Écran Poudre","Fuite","Poison Sting","String Shot","Bug Bite","Poison Sting"],
+[14,"Coconfort","Bug","Poison",45,25,50,25,25,35,10,15,"Mue",null,"Poison Sting","Harden","Poison Sting","Harden"],
+[15,"Dardargnan","Bug","Poison",65,90,40,45,80,75,0,0,"Essaim","Sniper","Fury Attack","Sludge Bomb","X-Scissor","Hyper Beam"],
+[16,"Roucool","Normal","Flying",40,45,40,35,35,56,18,17,"Regard Vif","Pieds Confus","Tackle","Gust","Wing Attack","Quick Attack"],
+[17,"Roucoups","Normal","Flying",63,60,55,50,50,71,36,18,"Regard Vif","Pieds Confus","Gust","Wing Attack","Aerial Ace","Fly"],
+[18,"Roucarnage","Normal","Flying",83,80,75,70,70,101,0,0,"Regard Vif","Pieds Confus","Wing Attack","Aerial Ace","Fly","Hyper Beam"],
+[19,"Rattata","Normal",null,30,56,35,25,35,72,20,20,"Fuite","Cran","Tackle","Quick Attack","Bite","Body Slam"],
+[20,"Rattatac","Normal",null,55,81,60,50,70,97,0,0,"Fuite","Cran","Quick Attack","Bite","Body Slam","Hyper Beam"],
+[21,"Piafabec","Normal","Flying",40,60,30,31,31,70,20,22,"Regard Vif","Sniper","Peck","Fury Attack","Aerial Ace","Drill Peck"],
+[22,"Rapasdepic","Normal","Flying",65,90,65,61,61,100,0,0,"Regard Vif","Sniper","Fury Attack","Aerial Ace","Drill Peck","Hyper Beam"],
+[23,"Abo","Poison",null,35,60,44,40,54,55,22,24,"Intimidation","Mue","Poison Sting","Bite","Sludge","Sludge Bomb"],
+[24,"Arbok","Poison",null,60,95,69,65,79,80,0,0,"Intimidation","Mue","Bite","Sludge","Sludge Bomb","Gunk Shot"],
+[25,"Pikachu","Electric",null,35,55,40,50,50,90,-1,26,"Statik","Paratonnerre","Thunder Shock","Quick Attack","Thunderbolt","Thunder"],
+[26,"Raichu","Electric",null,60,90,55,90,80,110,0,0,"Statik","Paratonnerre","Thunder Shock","Thunderbolt","Thunder","Hyper Beam"],
+[27,"Sabelette","Ground",null,50,75,85,20,30,40,22,28,"Voile Sable","Baigne Sable","Scratch","Mud Shot","Slash","Earthquake"],
+[28,"Sablaireau","Ground",null,75,100,110,45,55,65,0,0,"Voile Sable","Baigne Sable","Slash","Earthquake","Rock Slide","Hyper Beam"],
+[29,"Nidoran♀","Poison",null,55,47,52,40,40,41,16,30,"Point Poison","Rivalité","Scratch","Poison Sting","Bite","Body Slam"],
+[30,"Nidorina","Poison",null,70,62,67,55,55,56,-1,31,"Point Poison","Rivalité","Bite","Poison Sting","Sludge","Body Slam"],
+[31,"Nidoqueen","Poison","Ground",90,92,87,75,85,76,0,0,"Point Poison","Rivalité","Sludge Bomb","Earthquake","Body Slam","Hyper Beam"],
+[32,"Nidoran♂","Poison",null,46,57,40,40,40,50,16,33,"Point Poison","Rivalité","Peck","Poison Sting","Horn Attack","Body Slam"],
+[33,"Nidorino","Poison",null,61,72,57,55,55,65,-1,34,"Point Poison","Rivalité","Horn Attack","Poison Sting","Sludge","Body Slam"],
+[34,"Nidoking","Poison","Ground",81,102,77,85,75,85,0,0,"Point Poison","Rivalité","Sludge Bomb","Earthquake","Body Slam","Hyper Beam"],
+[35,"Mélofée","Fairy",null,70,45,48,60,65,35,-1,36,"Charme","Garde Magik","Pound","Disarming Voice","Sing","Moonblast"],
+[36,"Mélodelfe","Fairy",null,95,70,73,95,90,60,0,0,"Charme","Garde Magik","Disarming Voice","Moonblast","Dazzling Gleam","Hyper Beam"],
+[37,"Goupix","Fire",null,38,41,40,50,65,65,-1,38,"Torche","Sécheresse","Ember","Quick Attack","Flamethrower","Fire Blast"],
+[38,"Feunard","Fire",null,73,76,75,81,100,100,0,0,"Torche","Sécheresse","Flamethrower","Quick Attack","Fire Blast","Hyper Beam"],
+[39,"Rondoudou","Normal","Fairy",115,45,20,45,25,20,-1,40,"Charme","Battant","Pound","Sing","Disarming Voice","Body Slam"],
+[40,"Grodoudou","Normal","Fairy",140,70,45,85,50,45,0,0,"Charme","Battant","Body Slam","Moonblast","Dazzling Gleam","Hyper Beam"],
+[41,"Nosferapti","Poison","Flying",40,45,35,30,40,55,22,42,"Attention","Infiltration","Peck","Bite","Wing Attack","Aerial Ace"],
+[42,"Nosferalto","Poison","Flying",75,80,70,65,75,90,0,0,"Attention","Infiltration","Bite","Wing Attack","Crunch","Sludge Bomb"],
+[43,"Mystherbe","Grass","Poison",45,50,55,75,65,30,21,44,"Chlorophylle","Fuite","Absorb","Razor Leaf","Acid","Petal Dance"],
+[44,"Ortide","Grass","Poison",60,65,70,85,75,40,-1,45,"Chlorophylle","Puanteur","Razor Leaf","Acid","Petal Dance","Sludge Bomb"],
+[45,"Rafflesia","Grass","Poison",75,80,85,110,90,50,0,0,"Chlorophylle","Pose Spore","Razor Leaf","Sludge Bomb","Petal Dance","Solar Beam"],
+[46,"Paras","Bug","Grass",35,70,55,45,55,25,24,47,"Pose Spore","Peau Sèche","Scratch","Bug Bite","Slash","X-Scissor"],
+[47,"Parasect","Bug","Grass",60,95,80,60,80,30,0,0,"Pose Spore","Peau Sèche","Bug Bite","Slash","X-Scissor","Mega Drain"],
+[48,"Mimitoss","Bug","Poison",60,55,50,40,55,45,31,49,"Œil Composé","Lentiteintée","Tackle","Confusion","Psybeam","Bug Buzz"],
+[49,"Aéromite","Bug","Poison",70,65,60,90,75,90,0,0,"Écran Poudre","Lentiteintée","Confusion","Psychic","Bug Buzz","Sludge Bomb"],
+[50,"Taupiqueur","Ground",null,10,55,25,35,45,95,26,51,"Voile Sable","Piège Sable","Scratch","Mud Shot","Slash","Earthquake"],
+[51,"Triopikeur","Ground",null,35,100,50,50,70,120,0,0,"Voile Sable","Piège Sable","Mud Shot","Earthquake","Rock Slide","Slash"],
+[52,"Miaouss","Normal",null,40,45,35,40,40,90,28,53,"Ramassage","Technicien","Scratch","Bite","Slash","Swift"],
+[53,"Persian","Normal",null,65,70,60,65,65,115,0,0,"Souplesse","Technicien","Bite","Slash","Swift","Hyper Beam"],
+[54,"Psykokwak","Water",null,50,52,48,65,50,55,33,55,"Moiteur","Ciel Gris","Scratch","Water Gun","Confusion","Psychic"],
+[55,"Akwakwak","Water",null,80,82,78,95,80,85,0,0,"Moiteur","Ciel Gris","Water Gun","Surf","Psychic","Hydro Pump"],
+[56,"Férosinge","Fighting",null,40,80,35,35,45,70,28,57,"Esprit Vital","Colérique","Scratch","Karate Chop","Cross Chop","Close Combat"],
+[57,"Colossinge","Fighting",null,65,105,60,60,70,95,0,0,"Esprit Vital","Colérique","Karate Chop","Cross Chop","Close Combat","Stone Edge"],
+[58,"Caninos","Fire",null,55,70,45,70,50,60,-1,59,"Intimidation","Torche","Ember","Bite","Flamethrower","Flare Blitz"],
+[59,"Arcanin","Fire",null,90,110,80,100,80,95,0,0,"Intimidation","Torche","Flamethrower","Crunch","Flare Blitz","Hyper Beam"],
+[60,"Ptitard","Water",null,40,50,40,40,40,90,25,61,"Absorb Eau","Moiteur","Bubble","Water Gun","Body Slam","Surf"],
+[61,"Têtarte","Water",null,65,65,65,50,50,90,36,62,"Absorb Eau","Moiteur","Water Gun","Surf","Body Slam","Hydro Pump"],
+[62,"Tartard","Water","Fighting",90,95,95,70,90,70,0,0,"Absorb Eau","Moiteur","Surf","Cross Chop","Body Slam","Hydro Pump"],
+[63,"Abra","Psychic",null,25,20,15,105,55,90,16,64,"Synchro","Attention","Confusion","Psybeam","Psychic","Confusion"],
+[64,"Kadabra","Psychic",null,40,35,30,120,70,105,36,65,"Synchro","Attention","Psybeam","Psychic","Shadow Ball","Psystrike"],
+[65,"Alakazam","Psychic",null,55,50,45,135,95,120,0,0,"Synchro","Attention","Psychic","Shadow Ball","Psystrike","Focus Blast"],
+[66,"Machoc","Fighting",null,70,80,50,35,35,35,28,67,"Cran","Annule Garde","Karate Chop","Brick Break","Cross Chop","Close Combat"],
+[67,"Machopeur","Fighting",null,80,100,70,50,60,45,36,68,"Cran","Annule Garde","Brick Break","Cross Chop","Close Combat","Stone Edge"],
+[68,"Mackogneur","Fighting",null,90,130,80,65,85,55,0,0,"Cran","Annule Garde","Cross Chop","Close Combat","Focus Blast","Stone Edge"],
+[69,"Chétiflor","Grass","Poison",50,75,35,70,30,40,21,70,"Chlorophylle","Gloutonnerie","Vine Whip","Razor Leaf","Acid","Sludge Bomb"],
+[70,"Boustiflor","Grass","Poison",65,90,50,85,45,55,-1,71,"Chlorophylle","Gloutonnerie","Razor Leaf","Acid","Sludge Bomb","Solar Beam"],
+[71,"Empiflor","Grass","Poison",80,105,65,100,70,70,0,0,"Chlorophylle","Gloutonnerie","Razor Leaf","Sludge Bomb","Power Whip","Solar Beam"],
+[72,"Tentacool","Water","Poison",40,40,35,50,100,70,30,73,"Corps Sain","Suintement","Bubble","Poison Sting","Acid","Surf"],
+[73,"Tentacruel","Water","Poison",80,70,65,80,120,100,0,0,"Corps Sain","Suintement","Surf","Sludge Bomb","Hydro Pump","Gunk Shot"],
+[74,"Racaillou","Rock","Ground",40,80,100,30,30,20,25,75,"Tête de Roc","Fermeté","Tackle","Rock Throw","Rock Slide","Earthquake"],
+[75,"Gravalanch","Rock","Ground",55,95,115,45,45,35,36,76,"Tête de Roc","Fermeté","Rock Throw","Rock Slide","Stone Edge","Earthquake"],
+[76,"Grolem","Rock","Ground",80,120,130,55,65,45,0,0,"Tête de Roc","Fermeté","Rock Slide","Earthquake","Stone Edge","Explosion"],
+[77,"Ponyta","Fire",null,50,85,55,65,65,90,40,78,"Fuite","Torche","Ember","Stomp","Flamethrower","Flare Blitz"],
+[78,"Galopa","Fire",null,65,100,70,80,80,105,0,0,"Fuite","Torche","Flamethrower","Stomp","Flare Blitz","Hyper Beam"],
+[79,"Ramoloss","Water","Psychic",90,65,65,40,40,15,37,80,"Benêt","Tempo Perso","Water Gun","Confusion","Surf","Psychic"],
+[80,"Flagadoss","Water","Psychic",95,75,110,100,80,30,0,0,"Benêt","Tempo Perso","Surf","Psychic","Hydro Pump","Ice Beam"],
+[81,"Magnéti","Electric","Steel",25,35,70,95,55,45,30,82,"Magnépiège","Fermeté","Thunder Shock","Thunderbolt","Flash Cannon","Thunder"],
+[82,"Magnéton","Electric","Steel",50,60,95,120,70,70,0,0,"Magnépiège","Fermeté","Thunderbolt","Flash Cannon","Thunder","Hyper Beam"],
+[83,"Canarticho","Normal","Flying",52,90,55,58,62,60,0,0,"Regard Vif","Attention","Peck","Slash","Aerial Ace","Fury Attack"],
+[84,"Doduo","Normal","Flying",35,85,45,35,35,75,31,85,"Fuite","Matinal","Peck","Fury Attack","Drill Peck","Aerial Ace"],
+[85,"Dodrio","Normal","Flying",60,110,70,60,60,110,0,0,"Fuite","Matinal","Fury Attack","Drill Peck","Aerial Ace","Hyper Beam"],
+[86,"Otaria","Water",null,65,45,55,45,70,45,34,87,"Isograisse","Hydratation","Headbutt","Water Gun","Aurora Beam","Surf"],
+[87,"Lamantine","Water","Ice",90,70,80,70,95,70,0,0,"Isograisse","Hydratation","Aurora Beam","Ice Beam","Surf","Blizzard"],
+[88,"Tadmorv","Poison",null,80,80,50,40,50,25,38,89,"Puanteur","Glu","Pound","Sludge","Sludge Bomb","Gunk Shot"],
+[89,"Grotadmorv","Poison",null,105,105,75,65,100,50,0,0,"Puanteur","Glu","Sludge","Sludge Bomb","Gunk Shot","Body Slam"],
+[90,"Kokiyas","Water",null,30,65,100,45,25,40,-1,91,"Coque Armure","Multi-Coups","Tackle","Water Gun","Ice Beam","Aurora Beam"],
+[91,"Crustabri","Water","Ice",50,95,180,85,45,70,0,0,"Coque Armure","Multi-Coups","Ice Beam","Surf","Blizzard","Hyper Beam"],
+[92,"Fantominus","Ghost","Poison",30,35,30,100,35,80,25,93,"Lévitation",null,"Lick","Night Shade","Shadow Ball","Sludge Bomb"],
+[93,"Spectrum","Ghost","Poison",45,50,45,115,55,95,36,94,"Lévitation",null,"Night Shade","Shadow Ball","Sludge Bomb","Shadow Force"],
+[94,"Ectoplasma","Ghost","Poison",60,65,60,130,75,110,0,0,"Corps Maudit","Lévitation","Shadow Ball","Sludge Bomb","Shadow Force","Focus Blast"],
+[95,"Onix","Rock","Ground",35,45,160,30,45,70,0,0,"Tête de Roc","Fermeté","Rock Throw","Rock Slide","Earthquake","Stone Edge"],
+[96,"Soporifik","Psychic",null,60,48,45,43,90,42,26,97,"Insomnia","Anticipation","Pound","Confusion","Psybeam","Psychic"],
+[97,"Hypnomade","Psychic",null,85,73,70,73,115,67,0,0,"Insomnia","Anticipation","Confusion","Psychic","Psystrike","Shadow Ball"],
+[98,"Krabby","Water",null,30,105,90,25,25,50,28,99,"Hyper Cutter","Coque Armure","Scratch","Water Gun","Vice Grip","Crabhammer"],
+[99,"Krabboss","Water",null,55,130,115,50,50,75,0,0,"Hyper Cutter","Coque Armure","Surf","Crabhammer","Stone Edge","Hyper Beam"],
+[100,"Voltorbe","Electric",null,40,30,50,55,55,100,30,101,"Anti-Bruit","Statik","Thunder Shock","Swift","Thunderbolt","Self-Destruct"],
+[101,"Électrode","Electric",null,60,50,70,80,80,150,0,0,"Anti-Bruit","Statik","Thunderbolt","Thunder","Swift","Explosion"],
+[102,"Nœunœuf","Grass","Psychic",60,40,80,60,45,40,-1,103,"Chlorophylle","Récolte","Absorb","Confusion","Egg Bomb","Solar Beam"],
+[103,"Noadkoko","Grass","Psychic",95,95,85,125,75,55,0,0,"Chlorophylle","Récolte","Confusion","Psychic","Egg Bomb","Solar Beam"],
+[104,"Osselait","Ground",null,50,50,95,40,50,35,28,105,"Tête de Roc","Paratonnerre","Tackle","Bone Club","Bonemerang","Earthquake"],
+[105,"Ossatueur","Ground",null,60,80,110,50,80,45,0,0,"Tête de Roc","Paratonnerre","Bone Club","Bonemerang","Earthquake","Stone Edge"],
+[106,"Kicklee","Fighting",null,50,120,53,35,110,87,0,0,"Souplesse","Téméraire","Double Kick","High Jump Kick","Close Combat","Brick Break"],
+[107,"Tygnon","Fighting",null,50,105,79,35,110,76,0,0,"Regard Vif","Poing de Fer","Mach Punch","Ice Punch","Cross Chop","Close Combat"],
+[108,"Excelangue","Normal",null,90,55,75,60,75,30,0,0,"Tempo Perso","Benêt","Lick","Body Slam","Power Whip","Earthquake"],
+[109,"Smogo","Poison",null,40,65,95,60,45,35,35,110,"Lévitation",null,"Tackle","Sludge","Sludge Bomb","Self-Destruct"],
+[110,"Smogogo","Poison",null,65,90,120,85,70,60,0,0,"Lévitation",null,"Sludge","Sludge Bomb","Gunk Shot","Explosion"],
+[111,"Rhinocorne","Rock","Ground",80,85,95,30,30,25,42,112,"Paratonnerre","Tête de Roc","Horn Attack","Rock Slide","Earthquake","Stomp"],
+[112,"Rhinoféros","Rock","Ground",105,130,120,45,45,40,0,0,"Paratonnerre","Tête de Roc","Rock Slide","Earthquake","Stone Edge","Hyper Beam"],
+[113,"Leveinard","Normal",null,250,5,5,35,105,50,0,0,"Médic Nature","Sérénité","Pound","Sing","Egg Bomb","Body Slam"],
+[114,"Saquedeneu","Grass",null,65,55,115,100,40,60,0,0,"Chlorophylle","Feuille Garde","Vine Whip","Mega Drain","Power Whip","Solar Beam"],
+[115,"Kangourex","Normal",null,105,95,80,40,80,90,0,0,"Matinal","Querelleur","Comet Punch","Bite","Body Slam","Earthquake"],
+[116,"Hypotrempe","Water",null,30,40,70,70,25,60,32,117,"Glissade","Sniper","Bubble","Water Gun","Dragon Rage","Hydro Pump"],
+[117,"Hypocéan","Water",null,55,65,95,95,45,85,0,0,"Point Poison","Sniper","Water Gun","Dragon Rage","Surf","Hydro Pump"],
+[118,"Poissirène","Water",null,45,67,60,35,50,63,33,119,"Glissade","Voile Eau","Peck","Water Gun","Horn Attack","Aqua Tail"],
+[119,"Poissoroy","Water",null,80,92,65,65,80,68,0,0,"Glissade","Voile Eau","Horn Attack","Aqua Tail","Surf","Hyper Beam"],
+[120,"Stari","Water",null,30,45,55,70,55,85,-1,121,"Lumiattirance","Médic Nature","Tackle","Water Gun","Swift","Surf"],
+[121,"Staross","Water","Psychic",60,75,85,100,85,115,0,0,"Lumiattirance","Médic Nature","Surf","Psychic","Ice Beam","Hydro Pump"],
+[122,"M. Mime","Psychic","Fairy",40,45,65,100,120,90,0,0,"Anti-Bruit","Filtre","Confusion","Psychic","Dazzling Gleam","Psybeam"],
+[123,"Insécateur","Bug","Flying",70,110,80,55,80,105,0,0,"Essaim","Technicien","Quick Attack","Wing Attack","X-Scissor","Slash"],
+[124,"Lippoutou","Ice","Psychic",65,50,35,115,95,95,0,0,"Benêt","Anticipation","Pound","Ice Beam","Psychic","Blizzard"],
+[125,"Élektek","Electric",null,65,83,57,95,85,105,0,0,"Statik","Esprit Vital","Thunder Shock","Thunderbolt","Ice Punch","Thunder"],
+[126,"Magmar","Fire",null,65,95,57,100,85,93,0,0,"Corps Ardent","Esprit Vital","Ember","Flamethrower","Fire Blast","Focus Blast"],
+[127,"Scarabrute","Bug",null,65,125,100,55,70,85,0,0,"Hyper Cutter","Brise Moule","Vice Grip","X-Scissor","Close Combat","Stone Edge"],
+[128,"Tauros","Normal",null,75,100,95,40,70,110,0,0,"Intimidation","Colérique","Tackle","Body Slam","Take Down","Earthquake"],
+[129,"Magicarpe","Water",null,20,10,55,15,20,80,20,130,"Glissade","Phobique","Splash","Tackle","Flail","Splash"],
+[130,"Léviator","Water","Flying",95,125,79,60,100,81,0,0,"Intimidation","Impudence","Bite","Aqua Tail","Crunch","Hyper Beam"],
+[131,"Lokhlass","Water","Ice",130,85,80,85,95,60,0,0,"Absorb Eau","Coque Armure","Water Gun","Ice Beam","Surf","Blizzard"],
+[132,"Métamorph","Normal",null,48,48,48,48,48,48,0,0,"Souplesse","Imposteur","Tackle","Pound","Swift","Body Slam"],
+[133,"Évoli","Normal",null,55,55,50,45,65,55,-1,134,"Fuite","Adaptabilité","Tackle","Quick Attack","Bite","Body Slam"],
+[134,"Aquali","Water",null,130,65,60,110,95,65,0,0,"Absorb Eau","Hydratation","Water Gun","Surf","Aqua Tail","Hydro Pump"],
+[135,"Voltali","Electric",null,65,65,60,110,95,130,0,0,"Absorb Volt","Pieds Agiles","Thunder Shock","Thunderbolt","Swift","Thunder"],
+[136,"Pyroli","Fire",null,65,130,60,95,110,65,0,0,"Torche","Cran","Ember","Flamethrower","Fire Blast","Flare Blitz"],
+[137,"Porygon","Normal",null,65,60,70,85,75,40,0,0,"Calque","Télécharge","Tackle","Swift","Psybeam","Hyper Beam"],
+[138,"Amonita","Rock","Water",35,40,100,90,55,35,40,139,"Glissade","Coque Armure","Water Gun","Rock Throw","Ice Beam","Surf"],
+[139,"Amonistar","Rock","Water",70,60,125,115,70,55,0,0,"Glissade","Coque Armure","Surf","Rock Slide","Ice Beam","Hydro Pump"],
+[140,"Kabuto","Rock","Water",30,80,90,55,45,55,40,141,"Glissade","Armurbaston","Scratch","Aqua Jet","Rock Slide","Slash"],
+[141,"Kabutops","Rock","Water",60,115,105,65,70,80,0,0,"Glissade","Armurbaston","Aqua Jet","Rock Slide","Stone Edge","Slash"],
+[142,"Ptéra","Rock","Flying",80,105,65,60,75,130,0,0,"Tête de Roc","Pression","Wing Attack","Rock Slide","Aerial Ace","Stone Edge"],
+[143,"Ronflex","Normal",null,160,110,65,65,110,30,0,0,"Insomnia","Isograisse","Tackle","Body Slam","Crunch","Hyper Beam"],
+[144,"Artikodin","Ice","Flying",90,85,100,95,125,85,0,0,"Pression","Rideau Neige","Ice Beam","Aerial Ace","Blizzard","Hyper Beam"],
+[145,"Électhor","Electric","Flying",90,90,85,125,90,100,0,0,"Pression","Statik","Thunderbolt","Drill Peck","Thunder","Hyper Beam"],
+[146,"Sulfura","Fire","Flying",90,100,90,125,85,90,0,0,"Pression","Corps Ardent","Flamethrower","Wing Attack","Fire Blast","Hyper Beam"],
+[147,"Minidraco","Dragon",null,41,64,45,50,50,50,30,148,"Mue","Écaille Spé.","Wing Attack","Dragon Rage","Aqua Tail","Dragon Pulse"],
+[148,"Draco","Dragon",null,61,84,65,70,70,70,55,149,"Mue","Écaille Spé.","Dragon Rage","Aqua Tail","Dragon Pulse","Dragon Rush"],
+[149,"Dracolosse","Dragon","Flying",91,134,95,100,100,80,0,0,"Attention","Multiécaille","Dragon Claw","Dragon Rush","Outrage","Hyper Beam"],
+[150,"Mewtwo","Psychic",null,106,110,90,154,90,130,0,0,"Pression","Tension","Psychic","Shadow Ball","Psystrike","Hyper Beam"],
+[151,"Mew","Psychic",null,100,100,100,100,100,100,0,0,"Synchro",null,"Psychic","Aura Sphere","Dazzling Gleam","Hyper Beam"],
+];
+// ── LEARNSETS (attaques apprises par niveau — fidèles aux jeux officiels
+// pour les lignées iconiques, plausibles pour les autres) ──────────────────
+const LEARN_CUSTOM={
+ 52:[[1,"Scratch"],[1,"Growl"],[6,"Bite"],[14,"Thief"],[22,"Slash"],[32,"Swift"]],
+ 53:[[1,"Scratch"],[1,"Bite"],[14,"Thief"],[25,"Slash"],[37,"Swift"],[49,"Hyper Beam"]],
+ 35:[[1,"Pound"],[1,"Growl"],[10,"Disarming Voice"],[19,"Heal Pulse"],[31,"Moonblast"]],
+ 36:[[1,"Pound"],[1,"Disarming Voice"],[19,"Heal Pulse"],[31,"Moonblast"],[44,"Dazzling Gleam"]],
+ 39:[[1,"Sing"],[1,"Pound"],[11,"Disarming Voice"],[21,"Heal Pulse"],[33,"Body Slam"]],
+ 40:[[1,"Sing"],[1,"Pound"],[11,"Disarming Voice"],[21,"Heal Pulse"],[33,"Body Slam"],[45,"Moonblast"]],
+ 113:[[1,"Pound"],[1,"Sing"],[12,"Heal Pulse"],[23,"Egg Bomb"],[34,"Recover"],[46,"Body Slam"]],
+ 122:[[1,"Confusion"],[1,"Pound"],[15,"Psybeam"],[24,"Heal Pulse"],[33,"Psychic"],[47,"Dazzling Gleam"]],
+ 1:[[1,"Tackle"],[1,"Growl"],[7,"Vine Whip"],[15,"Razor Leaf"],[20,"Mega Drain"],[46,"Solar Beam"]],
+ 2:[[1,"Tackle"],[1,"Growl"],[7,"Vine Whip"],[15,"Razor Leaf"],[22,"Mega Drain"],[54,"Solar Beam"]],
+ 3:[[1,"Tackle"],[1,"Growl"],[7,"Vine Whip"],[15,"Razor Leaf"],[22,"Mega Drain"],[45,"Petal Dance"],[53,"Solar Beam"]],
+ 4:[[1,"Scratch"],[1,"Growl"],[4,"Ember"],[17,"Smokescreen"],[24,"Flamethrower"],[30,"Slash"],[46,"Fire Blast"]],
+ 5:[[1,"Scratch"],[1,"Growl"],[4,"Ember"],[17,"Smokescreen"],[24,"Flamethrower"],[33,"Slash"],[50,"Fire Blast"]],
+ 6:[[1,"Scratch"],[1,"Growl"],[4,"Ember"],[24,"Flamethrower"],[33,"Slash"],[36,"Wing Attack"],[50,"Fire Blast"],[62,"Flare Blitz"]],
+ 7:[[1,"Tackle"],[1,"Tail Whip"],[8,"Bubble"],[15,"Water Gun"],[24,"Bite"],[28,"Withdraw"],[33,"Aqua Tail"],[47,"Hydro Pump"]],
+ 8:[[1,"Tackle"],[1,"Tail Whip"],[8,"Bubble"],[15,"Water Gun"],[24,"Bite"],[35,"Aqua Tail"],[52,"Hydro Pump"]],
+ 9:[[1,"Tackle"],[1,"Tail Whip"],[8,"Bubble"],[15,"Water Gun"],[24,"Bite"],[35,"Aqua Tail"],[42,"Surf"],[55,"Hydro Pump"]],
+ 10:[[1,"Tackle"],[1,"String Shot"],[9,"Bug Bite"]],
+ 11:[[1,"Harden"],[1,"Tackle"]],
+ 12:[[1,"Gust"],[1,"Confusion"],[12,"Psybeam"],[24,"Wing Attack"],[34,"Psychic"],[47,"Bug Buzz"]],
+ 13:[[1,"Poison Sting"],[1,"String Shot"],[9,"Bug Bite"]],
+ 14:[[1,"Harden"],[1,"Poison Sting"]],
+ 15:[[1,"Fury Attack"],[10,"Poison Sting"],[20,"Bug Bite"],[30,"X-Scissor"],[40,"Sludge Bomb"]],
+ 16:[[1,"Tackle"],[5,"Sand Attack"],[9,"Gust"],[19,"Quick Attack"],[27,"Wing Attack"],[39,"Aerial Ace"]],
+ 17:[[1,"Tackle"],[5,"Sand Attack"],[9,"Gust"],[21,"Quick Attack"],[31,"Wing Attack"],[43,"Aerial Ace"]],
+ 18:[[1,"Gust"],[5,"Sand Attack"],[21,"Quick Attack"],[31,"Wing Attack"],[44,"Aerial Ace"],[56,"Fly"],[62,"Hyper Beam"]],
+ 19:[[1,"Tackle"],[1,"Tail Whip"],[7,"Quick Attack"],[14,"Hyper Fang"],[23,"Bite"],[34,"Take Down"]],
+ 20:[[1,"Tackle"],[1,"Tail Whip"],[7,"Quick Attack"],[14,"Hyper Fang"],[27,"Bite"],[41,"Take Down"],[50,"Hyper Beam"]],
+ 25:[[1,"Thunder Shock"],[1,"Growl"],[11,"Quick Attack"],[21,"Swift"],[26,"Thunderbolt"],[43,"Thunder"]],
+ 26:[[1,"Thunder Shock"],[1,"Quick Attack"],[21,"Swift"],[26,"Thunderbolt"],[43,"Thunder"],[55,"Hyper Beam"]],
+ 41:[[1,"Peck"],[1,"Leer"],[13,"Bite"],[21,"Wing Attack"],[35,"Aerial Ace"]],
+ 42:[[1,"Peck"],[1,"Bite"],[21,"Wing Attack"],[35,"Aerial Ace"],[48,"Crunch"],[55,"Sludge Bomb"]],
+ 63:[[1,"Confusion"],[16,"Psybeam"]],
+ 64:[[1,"Confusion"],[16,"Psybeam"],[36,"Psychic"],[48,"Shadow Ball"]],
+ 65:[[1,"Confusion"],[16,"Psybeam"],[36,"Psychic"],[46,"Shadow Ball"],[58,"Psystrike"]],
+ 66:[[1,"Karate Chop"],[1,"Leer"],[13,"Double Kick"],[25,"Brick Break"],[37,"Cross Chop"],[49,"Close Combat"]],
+ 67:[[1,"Karate Chop"],[1,"Leer"],[13,"Double Kick"],[25,"Brick Break"],[40,"Cross Chop"],[52,"Close Combat"]],
+ 68:[[1,"Karate Chop"],[13,"Double Kick"],[25,"Brick Break"],[40,"Cross Chop"],[52,"Close Combat"],[60,"Focus Blast"]],
+ 74:[[1,"Tackle"],[1,"Defense Curl"],[11,"Rock Throw"],[21,"Mud Shot"],[29,"Rock Slide"],[43,"Earthquake"]],
+ 75:[[1,"Tackle"],[1,"Defense Curl"],[11,"Rock Throw"],[21,"Mud Shot"],[31,"Rock Slide"],[47,"Earthquake"],[55,"Stone Edge"]],
+ 76:[[1,"Rock Throw"],[21,"Mud Shot"],[31,"Rock Slide"],[47,"Earthquake"],[55,"Stone Edge"],[64,"Explosion"]],
+ 92:[[1,"Lick"],[1,"Smokescreen"],[12,"Night Shade"],[26,"Shadow Ball"],[40,"Sludge Bomb"]],
+ 93:[[1,"Lick"],[1,"Night Shade"],[26,"Shadow Ball"],[42,"Sludge Bomb"],[55,"Shadow Force"]],
+ 94:[[1,"Lick"],[1,"Night Shade"],[26,"Shadow Ball"],[42,"Sludge Bomb"],[55,"Shadow Force"],[62,"Focus Blast"]],
+ 129:[[1,"Splash"],[15,"Tackle"],[25,"Flail"]],
+ 130:[[1,"Bite"],[20,"Dragon Rage"],[25,"Aqua Tail"],[35,"Crunch"],[48,"Hyper Beam"]],
+ 133:[[1,"Tackle"],[1,"Tail Whip"],[10,"Quick Attack"],[17,"Bite"],[29,"Body Slam"],[41,"Take Down"]],
+ 143:[[1,"Tackle"],[1,"Defense Curl"],[12,"Headbutt"],[25,"Body Slam"],[41,"Crunch"],[53,"Hyper Beam"]],
+ 147:[[1,"Tackle"],[1,"Leer"],[15,"Dragon Rage"],[25,"Aqua Tail"],[35,"Dragon Pulse"]],
+ 148:[[1,"Tackle"],[1,"Leer"],[15,"Dragon Rage"],[25,"Aqua Tail"],[38,"Dragon Pulse"],[50,"Dragon Rush"]],
+ 149:[[1,"Wing Attack"],[15,"Dragon Rage"],[25,"Aqua Tail"],[38,"Dragon Pulse"],[50,"Dragon Rush"],[60,"Outrage"],[70,"Hyper Beam"]],
+ 150:[[1,"Confusion"],[20,"Psybeam"],[35,"Psychic"],[50,"Shadow Ball"],[65,"Psystrike"],[80,"Hyper Beam"]],
+ 151:[[1,"Pound"],[20,"Psybeam"],[35,"Psychic"],[50,"Aura Sphere"],[60,"Dazzling Gleam"],[75,"Hyper Beam"]],
+};
+function statusFor(t1){return["Rock","Ground","Steel","Fighting"].includes(t1)?"Leer":["Water","Ice"].includes(t1)?"Tail Whip":"Growl";}
+const LEARN={};
+const DEX={};RAW.forEach(r=>{DEX[r[0]]={id:r[0],name:r[1],t1:r[2],t2:r[3],bs:{hp:r[4],atk:r[5],def:r[6],spa:r[7],spd:r[8],spe:r[9]},evoLv:r[10]===-1?36:r[10],evoTo:r[11],abis:r[13]?[r[12],r[13]]:[r[12]],mv:[r[14],r[15],r[16],r[17]]};});
+RAW.forEach(r=>{const id=r[0];
+  if(LEARN_CUSTOM[id]){LEARN[id]=LEARN_CUSTOM[id];return;}
+  const d=DEX[id];const uniq=[...new Set(d.mv)];
+  const L=[[1,uniq[0]],[1,statusFor(d.t1)]];
+  const lvls=[9,18,29,42];
+  uniq.slice(1).forEach((mv,i)=>L.push([lvls[Math.min(i,3)],mv]));
+  LEARN[id]=L;
+});
+function learnedAt(sp,lv){return LEARN[sp].filter(([l])=>l<=lv).map(([,m])=>m);}
+
+
+// ── ROUTES DE KANTO (cheminement officiel) ─────────────────────────────────
+// enc: [id,minLv,maxLv] · trainer: {name,sprite,team:[[id,lv]],cash} · egg pool = enc de la zone
+const ROUTES=[
+{name:"Route 1",lv:[2,5],enc:[[16,2,5],[19,2,4]],tr:{name:"Gamin Régis",sp:"youngster",team:[[16,6],[19,6]],cash:120}},
+{name:"Route 2",lv:[3,5],enc:[[16,3,5],[19,3,5],[10,3,5],[13,3,5]],tr:{name:"Scout Rémi",sp:"bugcatcher",team:[[10,7],[13,7],[16,8]],cash:180}},
+{name:"Forêt de Jade",lv:[4,7],enc:[[10,4,6],[11,5,6],[13,4,6],[14,5,6],[25,3,5]],tr:{name:"Scout Sacha",sp:"bugcatcher",team:[[11,9],[14,9],[12,10]],cash:250}},
+{name:"Argenta — Arène",lv:[8,12],enc:[[74,8,11],[27,8,11],[21,8,11]],tr:{name:"⭐ PIERRE",sp:"brock",team:[[74,12],[95,14]],cash:1400,badge:"Badge Roche",gym:true,tm:"Rock Slide"},pre:[{name:"Campeur Léo",sp:"camper",team:[[74,10],[27,11]],cash:150},{name:"Scout Timmy",sp:"youngster",team:[[50,10],[74,11]],cash:150}]},
+{name:"Route 3",lv:[6,10],enc:[[21,6,9],[16,6,9],[39,5,8],[56,7,10]],tr:{name:"Gamine Léa",sp:"lass",team:[[29,10],[32,10],[39,11]],cash:350}},
+{name:"Mont Sélénite",lv:[8,12],enc:[[41,8,11],[74,8,11],[35,8,10],[46,8,10]],tr:{name:"Sbire Rocket",sp:"rocket",team:[[41,11],[23,11],[74,12]],cash:500}},
+{name:"Route 4",lv:[10,14],enc:[[19,10,13],[21,10,13],[23,10,13],[27,10,13]],tr:{name:"Dresseuse Ana",sp:"lass",team:[[29,13],[35,13]],cash:520}},
+{name:"Azuria — Arène",lv:[14,18],enc:[[60,12,16],[118,12,16],[54,12,16]],tr:{name:"⭐ ONDINE",sp:"misty",team:[[120,18],[121,21]],cash:2100,badge:"Badge Cascade",gym:true,tm:"Water Pulse"},pre:[{name:"Nageuse Lila",sp:"swimmerf",team:[[60,16],[118,16]],cash:260},{name:"Loulou Marin",sp:"tuberf",team:[[54,17],[116,17]],cash:260}]},
+{name:"Routes 24-25",lv:[12,16],enc:[[43,12,15],[69,12,15],[63,10,14],[16,12,15]],tr:{name:"Topdresseur Théo",sp:"cooltrainer",team:[[63,15],[43,15],[69,15]],cash:700}},
+{name:"Route 6 & Carmin",lv:[14,18],enc:[[52,14,17],[54,14,17],[16,14,17],[43,14,17]],tr:{name:"Marin Marco",sp:"sailor",team:[[66,17],[90,17],[72,18]],cash:850}},
+{name:"Carmin — Arène",lv:[18,22],enc:[[100,16,20],[81,16,20],[25,16,20]],tr:{name:"⭐ MAJOR BOB",sp:"ltsurge",team:[[100,21],[25,18],[26,24]],cash:3000,badge:"Badge Foudre",gym:true,tm:"Shock Wave"},pre:[{name:"Ingénieur Marc",sp:"scientist",team:[[81,19],[100,20]],cash:380},{name:"Matelot Rick",sp:"sailor",team:[[25,20],[81,20]],cash:380}]},
+{name:"Grotte Sombre",lv:[16,22],enc:[[41,16,20],[74,16,20],[66,16,20],[104,16,20]],tr:{name:"Montagnard Max",sp:"hiker",team:[[74,20],[75,23],[95,23]],cash:1000}},
+{name:"Lavanville — Tour",lv:[20,26],enc:[[92,20,25],[93,22,26],[104,20,24]],tr:{name:"Exorciste Ida",sp:"channeler",team:[[92,23],[92,24],[93,26]],cash:1200}},
+{name:"Céladopole — Arène",lv:[24,29],enc:[[43,22,26],[44,24,28],[69,22,26],[114,24,28]],tr:{name:"⭐ ERIKA",sp:"erika",team:[[71,29],[114,24],[45,29]],cash:4200,badge:"Badge Prisme",gym:true,tm:"Giga Drain"},pre:[{name:"Jardinière Émy",sp:"lass",team:[[43,26],[69,26]],cash:520},{name:"Aromate Zoé",sp:"beauty",team:[[44,27],[70,27]],cash:520}]},
+{name:"Zone Safari",lv:[22,30],enc:[[111,22,28],[115,24,30],[123,24,30],[127,24,30],[128,24,30],[113,22,26],[102,22,28],[84,22,28]],tr:{name:"Gardien Safari",sp:"cooltrainer",team:[[111,28],[115,30]],cash:1600}},
+{name:"Parmanie — Arène",lv:[28,34],enc:[[88,26,32],[109,26,32],[41,26,32]],tr:{name:"⭐ KOGA",sp:"koga",team:[[109,37],[89,39],[110,43]],cash:5500,badge:"Badge Âme",gym:true,tm:"Sludge Bomb"},pre:[{name:"Ninja Kai",sp:"rocket",team:[[109,33],[88,34]],cash:680},{name:"Ninja Shino",sp:"rocket",team:[[41,34],[89,35]],cash:680}]},
+{name:"Routes 12-15",lv:[26,32],enc:[[48,26,30],[43,26,30],[132,26,30],[83,26,30],[96,26,30]],tr:{name:"Ornithologue Léon",sp:"birdkeeper",team:[[17,30],[21,30],[84,32]],cash:1900}},
+{name:"Safrania — Sylphe",lv:[30,36],enc:[[96,28,34],[109,28,34],[100,28,34],[137,30,34]],tr:{name:"Sbire Rocket Élite",sp:"rocket",team:[[24,35],[110,35],[53,36]],cash:2400}},
+{name:"Safrania — Arène",lv:[34,40],enc:[[63,32,36],[64,34,38],[96,32,36],[122,32,38]],tr:{name:"⭐ MORGANE",sp:"sabrina",team:[[64,38],[122,37],[65,43]],cash:7000,badge:"Badge Marais",gym:true,tm:"Psychic"},pre:[{name:"Médium Sol",sp:"channeler",team:[[96,35],[64,36]],cash:850},{name:"Kinésiste Max",sp:"psychic",team:[[122,36],[97,37]],cash:850}]},
+{name:"Îles Écume",lv:[32,38],enc:[[86,30,36],[90,30,36],[98,30,36],[116,30,36],[120,30,36],[131,34,38]],tr:{name:"Nageuse Marine",sp:"swimmer",team:[[87,38],[91,38]],cash:2600}},
+{name:"Cramois'Île — Arène",lv:[38,44],enc:[[58,36,42],[77,36,42],[126,38,42],[88,36,40]],tr:{name:"⭐ AUGUSTE",sp:"blaine",team:[[58,42],[78,40],[59,47]],cash:8500,badge:"Badge Volcan",gym:true,tm:"Fire Blast"},pre:[{name:"Cendrée Tom",sp:"scientist",team:[[58,40],[126,41]],cash:1000},{name:"Brûlot Ken",sp:"hiker",team:[[77,41],[126,42]],cash:1000}]},
+{name:"Manoir Pokémon",lv:[36,42],enc:[[88,34,40],[109,34,40],[58,34,40],[37,34,40],[137,36,40]],tr:{name:"Scientifique Gil",sp:"scientist",team:[[82,42],[110,42],[89,44]],cash:3000}},
+{name:"Jadielle — Arène",lv:[42,48],enc:[[111,40,46],[50,40,44],[27,40,44]],tr:{name:"⭐ GIOVANNI",sp:"giovanni",team:[[111,45],[51,42],[31,44],[34,45],[112,50]],cash:11000,badge:"Badge Terre",gym:true,tm:"Earthquake"},pre:[{name:"Sbire Élite A",sp:"rocket",team:[[53,44],[111,45]],cash:1300},{name:"Sbire Élite B",sp:"rocket",team:[[24,45],[110,46]],cash:1300}]},
+{name:"Route Victoire",lv:[44,50],enc:[[66,42,48],[74,42,48],[95,44,50],[41,42,48],[105,44,48]],tr:{name:"Topdresseur Iris",sp:"cooltrainer",team:[[112,50],[68,50],[103,50]],cash:4200}},
+{name:"Ligue — Conseil 4",lv:[50,56],enc:[[131,48,54],[87,48,54],[93,50,54],[112,50,54],[142,50,54]],tr:{name:"⭐ PETER",sp:"lance",team:[[130,58],[149,60],[142,60],[149,62]],cash:16000,badge:"Maître de la Ligue",gym:true,tm:"Hyper Beam"},pre:[{name:"⭐ OLGA",sp:"lorelei",team:[[87,52],[124,54],[131,56]],cash:2000},{name:"⭐ ALDO",sp:"bruno",team:[[95,53],[106,55],[68,57]],cash:2000},{name:"⭐ AGATHA",sp:"agatha",team:[[94,54],[42,54],[24,56]],cash:2000}]},
+{name:"Grotte Azurée",lv:[56,65],solo:true,enc:[[42,54,60],[64,54,60],[112,56,62],[101,54,60],[149,58,62]],tr:{name:"⚡ MEWTWO",sp:"mewtwo",team:[[150,70]],cash:30000,badge:"Vainqueur de Kanto",final:true,boss:true}},
+];
+
+const ITEMS_SHOP=[
+{id:"masterball",name:"Master Ball",cost:250000,desc:"Capture Mewtwo à sa défaite ! (1× par acte)"},
+{id:"shinycharm",name:"Charme Chroma",cost:150000,desc:"Shiny ×3 (1/1365)"},
+{id:"expshare",name:"Multi Exp",cost:25000,desc:"+50% EXP équipe"},
+{id:"amulet",name:"Pièce Rune",cost:18000,desc:"+50% PokéDollars"},
+];
+// Objets tenus vendus au Pokémart (prix par objet, achat multiple possible)
+const HELD_PRICES={leftovers:14000,choiceband:22000,wiseglasses:22000,luckyegg:45000,silkscarf:7500,charcoal:7500,mysticwater:7500,magnet:7500,miracleseed:7500,twistedspoon:7500,hardstone:7500,softsand:7500,blackbelt:7500};
+
+const BADGES_LIST=["Badge Roche","Badge Cascade","Badge Foudre","Badge Prisme","Badge Âme","Badge Marais","Badge Volcan","Badge Terre","Maître de la Ligue","Vainqueur de Kanto"];
+
+// ── FORMULES OFFICIELLES ────────────────────────────────────────────────────
+const statHP=(b,iv,ev,lv)=>Math.floor(((2*b+iv+Math.floor(ev/4))*lv)/100)+lv+10;
+const statO=(b,iv,ev,lv,nm)=>Math.floor((Math.floor(((2*b+iv+Math.floor(ev/4))*lv)/100)+5)*nm);
+const xpFor=lv=>Math.floor(1.4*lv*lv*lv);
+function actionItv(spe,mvName){ // Pokéchill : + rapide = agit + souvent
+  const base=Math.max(900,3600-spe*13);
+  const w=(MV[mvName]?.[2]||2500)/2500;
+  return Math.floor(base*w);
+}
+function calcStats(mon){
+  const d=DEX[mon.sp],n=NAT[mon.nature]||{};
+  return{hp:statHP(d.bs.hp,mon.iv.hp,mon.ev.hp,mon.lv),
+    atk:statO(d.bs.atk,mon.iv.atk,mon.ev.atk,mon.lv,n.atk||1),
+    def:statO(d.bs.def,mon.iv.def,mon.ev.def,mon.lv,n.def||1),
+    spa:statO(d.bs.spa,mon.iv.spa,mon.ev.spa,mon.lv,n.spa||1),
+    spd:statO(d.bs.spd,mon.iv.spd,mon.ev.spd,mon.lv,n.spd||1),
+    spe:statO(d.bs.spe,mon.iv.spe,mon.ev.spe,mon.lv,n.spe||1)};
+}
+const GENDERLESS=new Set([81,82,100,101,120,121,132,137,144,145,146,150,151]);
+const rIV=()=>({hp:R32(),atk:R32(),def:R32(),spa:R32(),spd:R32(),spe:R32()});
+const R32=()=>Math.floor(Math.random()*32);
+const zEV=()=>({hp:0,atk:0,def:0,spa:0,spd:0,spe:0});
+let UID=1;
+function mkMon(sp,lv,shinyMult=1){
+  const d=DEX[sp];
+  const mon={uid:UID++,sp,lv,xp:0,iv:rIV(),ev:zEV(),nature:NATS[Math.floor(Math.random()*NATS.length)],
+    abi:d.abis[0],shiny:Math.random()<SHINY_RATE*shinyMult,mvIdx:0,actCd:Math.floor(Math.random()*1500),moves:learnedAt(sp,lv).slice(-4),item:null,mod:{},status:null,statusT:0,gender:GENDERLESS.has(sp)?null:(Math.random()<0.5?"♂":"♀")};
+  const s=calcStats(mon);mon.maxHp=s.hp;mon.hp=s.hp;
+  return mon;
+}
+function dmgCalc(att,mvName,defMon,defStats,attStats){
+  const m=MV[mvName];if(!m)return{dmg:1,eff:1};
+  const[pw,ty,,cat]=m;const d=DEX[att.sp];const dd=DEX[defMon.sp];
+  const phys=cat==="P";
+  const am=att.mod||{},dm=defMon.mod||{};
+  let A=(phys?attStats.atk*(am.atk||1):attStats.spa*(am.spa||1));
+  const D=(phys?defStats.def*(dm.def||1):defStats.spd*(dm.spd||1));
+  if(att.status==="brn"&&phys)A*=0.5; // brûlure : Attaque physique halvée (officiel)
+  const stab=(ty===d.t1||ty===d.t2)?1.5:1;
+  const eff=tEff(ty,dd.t1,dd.t2);
+  let itemMult=1;const it=att.item&&HELD[att.item];
+  if(it){if(it.type===ty)itemMult*=it.mult;else if(it.stat==="atk"&&phys)itemMult*=it.mult;else if(it.stat==="spa"&&!phys)itemMult*=it.mult;}
+  const base=(((2*att.lv/5+2)*pw*A/Math.max(1,D))/50+2)*stab*eff*itemMult*(0.85+Math.random()*0.15);
+  return{dmg:Math.max(1,Math.floor(base)),eff};
+}
+function modStep(e,stat,down){ // ±8% par cran, bornes 0.6–1.4
+  e.mod=e.mod||{};const cur=e.mod[stat]||1;
+  e.mod[stat]=down?Math.max(0.6,cur-0.08):Math.min(1.4,cur+0.08);
+}
+function tryStatus(e,st){ // un seul statut à la fois (officiel)
+  if(e.status)return false;
+  e.status=st;e.statusT=0;
+  if(st==="slp")e.statusDur=3000+Math.random()*3000;
+  if(st==="frz")e.statusDur=4000+Math.random()*4000;
+  return true;
+}
+// EV yield: +2 dans la stat de base la plus haute de l'espèce vaincue
+function evYield(sp){const b=DEX[sp].bs;let best="hp",bv=0;for(const k of["hp","atk","def","spa","spd","spe"])if(b[k]>bv){bv=b[k];best=k;}return best;}
+
+const ESLUG=["","bulbasaur","ivysaur","venusaur","charmander","charmeleon","charizard","squirtle","wartortle","blastoise","caterpie","metapod","butterfree","weedle","kakuna","beedrill","pidgey","pidgeotto","pidgeot","rattata","raticate","spearow","fearow","ekans","arbok","pikachu","raichu","sandshrew","sandslash","nidoran-f","nidorina","nidoqueen","nidoran-m","nidorino","nidoking","clefairy","clefable","vulpix","ninetales","jigglypuff","wigglytuff","zubat","golbat","oddish","gloom","vileplume","paras","parasect","venonat","venomoth","diglett","dugtrio","meowth","persian","psyduck","golduck","mankey","primeape","growlithe","arcanine","poliwag","poliwhirl","poliwrath","abra","kadabra","alakazam","machop","machoke","machamp","bellsprout","weepinbell","victreebel","tentacool","tentacruel","geodude","graveler","golem","ponyta","rapidash","slowpoke","slowbro","magnemite","magneton","farfetchd","doduo","dodrio","seel","dewgong","grimer","muk","shellder","cloyster","gastly","haunter","gengar","onix","drowzee","hypno","krabby","kingler","voltorb","electrode","exeggcute","exeggutor","cubone","marowak","hitmonlee","hitmonchan","lickitung","koffing","weezing","rhyhorn","rhydon","chansey","tangela","kangaskhan","horsea","seadra","goldeen","seaking","staryu","starmie","mr-mime","scyther","jynx","electabuzz","magmar","pinsir","tauros","magikarp","gyarados","lapras","ditto","eevee","vaporeon","jolteon","flareon","porygon","omanyte","omastar","kabuto","kabutops","aerodactyl","snorlax","articuno","zapdos","moltres","dratini","dragonair","dragonite","mewtwo","mew"];
+// ── SPRITES (multi-CDN + fallback SVG pour Safari iOS) ─────────────────────
+function PixelMon({sp,size,shiny}){
+  // fallback pixel-art procédural déterministe (8x8 symétrique)
+  const d=DEX[sp]||{t1:"Normal"};
+  const c1=TC[d.t1]||"#888",c2=d.t2?TC[d.t2]:"#ffffff";
+  let seed=sp*2654435761>>>0;const rnd=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return((seed>>>0)%1000)/1000;};
+  const px=[];const G=8,u=size/G;
+  for(let y=0;y<G;y++)for(let x=0;x<G/2;x++){
+    if(rnd()>0.45){const col=rnd()>0.75?c2:c1;
+      px.push(<rect key={y+"-"+x} x={x*u} y={y*u} width={u} height={u} fill={col}/>);
+      px.push(<rect key={y+"m"+x} x={(G-1-x)*u} y={y*u} width={u} height={u} fill={col}/>);}
+  }
+  return(<svg width={size} height={size} style={{filter:shiny?"hue-rotate(120deg) drop-shadow(0 0 4px gold)":"none"}}>{px}</svg>);
+}
+function Sprite({sp,shiny,back,size=64,style={}}){
+  const[src,setSrc]=useState(0);
+  useEffect(()=>setSrc(0),[sp,shiny,back]);
+  const d=DEX[sp]||{name:"?",t1:"Normal"};
+  const dir=`${back?"back/":""}${shiny?"shiny/":""}`;
+  const p3=String(sp).padStart(3,"0");
+  const slug=ESLUG[sp];
+  const anim=`${back?"back-":""}${shiny?"shiny":"normal"}`;
+  const urls=[
+    `https://img.pokemondb.net/sprites/black-white/anim/${anim}/${slug}.gif`,
+    `https://img.pokemondb.net/sprites/black-white/${anim}/${slug}.png`,
+    `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dir}${sp}.png`,
+    `https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/${dir}${sp}.png`,
+    `https://assets.pokemon.com/assets/cms2/img/pokedex/detail/${p3}.png`,
+  ];
+  if(src>=urls.length)return <PixelMon sp={sp} size={size} shiny={shiny}/>;
+  return(<img src={urls[src]} width={size} height={size} alt={d.name} onError={()=>setSrc(v=>v+1)}
+    style={{imageRendering:"pixelated",filter:shiny?"drop-shadow(0 0 4px gold)":"none",transform:"none",...style}}/>);
+}
+function Pokeball({size=10}){
+  return(<svg width={size} height={size} viewBox="0 0 12 12"><circle cx="6" cy="6" r="5.4" fill="#fff" stroke="#222" strokeWidth="1"/><path d="M0.6 6 A5.4 5.4 0 0 1 11.4 6 L7.6 6 A1.6 1.6 0 0 0 4.4 6 Z" fill="#e63946"/><rect x="0.6" y="5.5" width="10.8" height="1" fill="#222"/><circle cx="6" cy="6" r="1.6" fill="#fff" stroke="#222" strokeWidth="0.8"/></svg>);
+}
+function TypeIcon({t,size=14}){
+  return <span style={{background:TC[t],color:"#fff",fontSize:Math.max(5,size*0.45),padding:"1px 5px",borderRadius:3,verticalAlign:"middle",textShadow:"0 1px 1px #0008",whiteSpace:"nowrap"}}>{TYPE_EMOJI[t]} {TYPE_FR[t]}</span>;
+}
+let _lastCry=0;
+function playCry(id,vol){
+  try{
+    const now=Date.now();if(now-_lastCry<700||!vol)return;_lastCry=now;
+    const a=new Audio(`https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest/${id}.ogg`);
+    a.volume=Math.min(1,vol);a.play().catch(()=>{});
+  }catch(e){}
+}
+const TRAINER_ALIAS={rocket:"teamrocket",swimmerf:"swimmer-f",tuberf:"swimmer-f",camper:"camper",mewtwo:null};
+function TrainerSprite({sp,size=64}){
+  const[idx,setIdx]=useState(0);
+  useEffect(()=>setIdx(0),[sp]);
+  if(sp==="mewtwo")return <Sprite sp={150} size={size}/>;
+  const cands=[sp,TRAINER_ALIAS[sp],"ace-trainer","youngster"].filter(Boolean);
+  if(idx>=cands.length)return(
+    <svg width={size} height={size} viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="#8a94b8"/><path d="M4 22c0-5 3.5-8 8-8s8 3 8 8z" fill="#5a6488"/></svg>);
+  return(<img src={`https://play.pokemonshowdown.com/sprites/trainers/${cands[idx]}.png`} width={size} height={size} alt={sp} onError={()=>setIdx(i=>i+1)} style={{imageRendering:"pixelated"}}/>);
+}
+
+
+// ── FONDS PIXEL-ART PAR ZONE ────────────────────────────────────────────────
+function zoneKind(name){
+  if(/Forêt/.test(name))return"forest";
+  if(/Mont|Grotte|Tunnel/.test(name))return"cave";
+  if(/Îles|Écume/.test(name))return"water";
+  if(/Tour|Manoir/.test(name))return"tower";
+  if(/Arène|Sylphe|Ligue/.test(name))return"gym";
+  if(/Safari/.test(name))return"safari";
+  return"route";
+}
+const BG_CACHE={};
+// ═══ FONDS PIXEL-ART FINS + PARALLAXE ═══════════════════════════════════════
+// 3 couches canvas (ciel/décor/sol) défilant à vitesses différentes
+const LW=240,LH=95,PXS=2; // grille logique 240×95, pixels 2×2
+function mkCtx(){const c=document.createElement("canvas");c.width=LW*PXS;c.height=LH*PXS;return[c,c.getContext("2d")];}
+function P(ctx,x,y,c){x=((Math.round(x)%LW)+LW)%LW;ctx.fillStyle=c;ctx.fillRect(x*PXS,Math.round(y)*PXS,PXS,PXS);}
+function rectW(ctx,x,y,w,h,c){for(let i=0;i<w;i++)for(let j=0;j<h;j++)P(ctx,x+i,y+j,c);}
+function ditherBand(ctx,y0,y1,c1,c2){ // transition douce : damier limité à 2 rangées frontière
+  const mid=Math.floor((y0+y1)/2);
+  for(let y=y0;y<y1;y++)for(let x=0;x<LW;x++){
+    let col;
+    if(y<mid-1)col=c1;
+    else if(y>mid)col=c2;
+    else col=((x+y)%2===0)?c2:c1; // fine frange dithérée
+    P(ctx,x,y,col);
+  }
+}
+function skyGrad(ctx,cols,yTop,yBot){ // bandes dithérées successives
+  const n=cols.length-1;const bh=(yBot-yTop)/n;
+  for(let i=0;i<n;i++)ditherBand(ctx,Math.floor(yTop+i*bh),Math.floor(yTop+(i+1)*bh),cols[i],cols[i+1]);
+}
+function cloud(ctx,cx,cy,s,body="#ffffff",shade="#d4e2f4",hi="#f6faff"){
+  const blobs=[[0,0,9,4],[-6,1,6,3],[6,1,6,3],[-2,-3,6,3],[3,-2,5,2]];
+  const RX=Math.ceil(13*s),RY=Math.ceil(8*s);
+  for(let ix=-RX;ix<=RX;ix++)for(let iy=-RY;iy<=RY;iy++){
+    let inside=false;
+    for(const[bx,by,bw,bh]of blobs){
+      const dx=ix-bx*s,dy=iy-by*s;
+      if((dx*dx)/(bw*bw*s*s)+(dy*dy)/(bh*bh*s*s)<=1){inside=true;break;}
+    }
+    if(!inside)continue;
+    let col=body;
+    if(iy>1.5*s)col=shade;
+    else if(iy<-2*s&&ix<s)col=hi;
+    P(ctx,cx+ix,cy+iy,col);
+  }
+}
+function grassEdge(ctx,yTop,h,c1,c2,c3,rnd){ // bord d'herbe détaillé (3 tons)
+  rectW(ctx,0,yTop+2,LW,h-2,c2);
+  for(let x=0;x<LW;x++){
+    const t=Math.floor(rnd()*3);
+    P(ctx,x,yTop+1,c1);if(t>0)P(ctx,x,yTop,c1);if(t>1)P(ctx,x,yTop-1,c1);
+    if(rnd()<0.3)P(ctx,x,yTop+2+Math.floor(rnd()*(h-3)),c3);
+    if(rnd()<0.25)P(ctx,x,yTop+2+Math.floor(rnd()*(h-3)),c1);
+  }
+}
+function tuft(ctx,x,y,c1,c2){P(ctx,x,y,c2);P(ctx,x,y-1,c1);P(ctx,x+1,y,c1);P(ctx,x+2,y,c2);P(ctx,x+2,y-1,c1);P(ctx,x+1,y-2,c1);}
+function flower(ctx,x,y,c){P(ctx,x,y,c);P(ctx,x+1,y,"#fff");P(ctx,x,y+1,"#3a7c2a");}
+function treeFine(ctx,x,base,s,dk,md,lt,tr){
+  const th=Math.floor(14*s);
+  rectW(ctx,x-1,base-th,3,th,tr);P(ctx,x-2,base-Math.floor(th*0.6),tr);P(ctx,x+2,base-Math.floor(th*0.4),tr);
+  const cy=base-th-Math.floor(6*s);
+  for(let dx=-8;dx<=8;dx++)for(let dy=-6;dy<=6;dy++){
+    const d=(dx*dx)/(64*s*s)+(dy*dy)/(36*s*s);
+    if(d<=1){const col=dy>2?dk:d>0.55?md:(dx<-2&&dy<0?lt:md);P(ctx,x+dx,cy+dy,col);}
+  }
+  for(let i=0;i<Math.floor(10*s);i++){const a=Math.random()*6.28,r=Math.random();P(ctx,x+Math.cos(a)*7*s*r,cy-2+Math.sin(a)*3*r,lt);}
+}
+function mtnFine(ctx,x,base,w,h,c1,c2,snow){
+  for(let i=0;i<h;i++){const hw=Math.floor(w*(1-i/h)/2);
+    for(let dx=-hw;dx<=hw;dx++)P(ctx,x+dx,base-i,dx>hw*0.4?c2:c1);
+    if(snow&&i>h*0.75)for(let dx=-hw;dx<=hw;dx++)if((dx+i)%3!==0)P(ctx,x+dx,base-i,"#e8f0f8");
+  }
+}
+function seaBand(ctx,y0,y1,rnd){
+  const rows=["#5a90d8","#4a80cc","#4478c4","#3e70bc","#3a68b4"];
+  for(let y=y0;y<y1;y++)rectW(ctx,0,y,LW,1,rows[Math.min(rows.length-1,Math.floor((y-y0)/(y1-y0)*rows.length))]);
+  // reflets horizontaux
+  for(let i=0;i<46;i++){const x=Math.floor(rnd()*LW),y=y0+1+Math.floor(rnd()*(y1-y0-2)),w=2+Math.floor(rnd()*5);
+    rectW(ctx,x,y,w,1,rnd()<0.4?"#7ab0e8":"#6aa0e0");}
+  // lueur horizon centrale
+  for(let dx=-30;dx<=30;dx++)for(let dy=0;dy<3;dy++)if(Math.abs(dx)<30-dy*8&&(dx+dy)%2===0)P(ctx,120+dx,y0+dy,"#cfe8f8");
+  for(let i=0;i<14;i++)P(ctx,Math.floor(rnd()*LW),y0+Math.floor(rnd()*(y1-y0)),"#e8f4ff"); // scintillements
+}
+function seededRnd(k){let seed=k.split("").reduce((a,c)=>a*31+c.charCodeAt(0),7)>>>0;
+  return()=>{seed=(seed*1103515245+12345)>>>0;return(seed%10000)/10000;};}
+
+function buildLayers(kind){
+  if(BG_CACHE[kind])return BG_CACHE[kind];
+  if(typeof document==="undefined")return null;
+  const rnd=seededRnd(kind);
+  const[cA,A]=mkCtx(),[cB,B]=mkCtx(),[cC,C]=mkCtx(); // A ciel · B décor · C sol
+  const GY=72; // ligne de sol logique
+  if(kind==="forest"){
+    skyGrad(A,["#20483a","#2a5a48","#356a52","#417a5c"],0,GY+10);rectW(A,0,GY+10,LW,LH-GY-10,"#417a5c");
+    for(let i=0;i<5;i++){const x=rnd()*LW;for(let dy=0;dy<28;dy++)if(rnd()<0.5)P(A,x+rnd()*4-2,4+dy,"#4a8a66");} // rais de lumière
+    for(let i=0;i<9;i++)treeFine(B,15+i*27+rnd()*10,GY+6,1.2+rnd()*0.7,"#1a4426","#276334","#3f8a48","#5a3f28");
+    for(let i=0;i<7;i++)treeFine(B,rnd()*LW,GY-6,0.7,"#143620","#1d4a28","#2a5f34","#4a3422"); // rangée lointaine
+    grassEdge(C,GY,LH-GY,"#4f9c46","#3d7c36","#2c5c28",rnd);
+    for(let i=0;i<26;i++)tuft(C,rnd()*LW,GY+4+rnd()*14,"#66b656","#3d7c36");
+    for(let i=0;i<6;i++)flower(C,rnd()*LW,GY+6+rnd()*10,rnd()<0.5?"#e878a8":"#f0c848");
+    rectW(C,30,GY+8,14,4,"#5a3f28");rectW(C,31,GY+7,4,2,"#3a2818"); // tronc couché
+  } else if(kind==="cave"){
+    skyGrad(A,["#171126","#1d1730","#241d3a"],0,GY+10);rectW(A,0,GY+10,LW,LH-GY-10,"#241d3a");
+    for(let i=0;i<20;i++){const x=rnd()*LW,l=3+rnd()*9;for(let d=0;d<l;d++)P(A,x+(d%2?0.5:0),d,d>l-2?"#3a2e50":"#2c2240");} // stalactites
+    for(let i=0;i<4;i++)mtnFine(B,rnd()*LW,GY+8,50+rnd()*40,30+rnd()*22,"#2a2140","#3a2e55",false);
+    for(let i=0;i<8;i++){const x=rnd()*LW,h=6+rnd()*10;rectW(B,x,GY+6-h,4,h,"#38294e");P(B,x+1,GY+5-h,"#4a3a66");} // stalagmites
+    for(let i=0;i<5;i++){const x=rnd()*LW,y=GY-4-rnd()*20,c=rnd()<0.5?"#7ec8ff":"#c07eff";
+      P(B,x,y,c);P(B,x,y-1,c);P(B,x+1,y,"#e8f4ff");P(B,x-1,y+1,c);} // cristaux
+    grassEdge(C,GY,LH-GY,"#4a3c60","#382c4c","#281f3a",rnd);
+    for(let i=0;i<16;i++){const x=rnd()*LW,y=GY+4+rnd()*14;P(C,x,y,"#5a4a76");P(C,x+1,y,"#463858");}
+  } else if(kind==="water"){
+    skyGrad(A,["#8ad4f0","#9edcf2","#b4e6f6","#cdeef8"],0,44);rectW(A,0,44,LW,LH-44,"#cdeef8");
+    cloud(A,30,12,1);cloud(A,95,20,1.4);cloud(A,160,9,0.9);cloud(A,215,16,1.1);cloud(A,60,30,0.7);
+    seaBand(B,44,GY+2,rnd);
+    mtnFine(B,200,46,36,14,"#4a8c5a","#5fa46c",false); // îlot lointain
+    grassEdge(C,GY,LH-GY,"#8cd85a","#5aa83a","#3a7c2a",rnd);
+    for(let i=0;i<30;i++)tuft(C,rnd()*LW,GY+3+rnd()*16,"#a8e878","#5aa83a");
+  } else if(kind==="tower"){
+    skyGrad(A,["#141026","#1a1430","#221a3c"],0,GY+10);rectW(A,0,GY+10,LW,LH-GY-10,"#221a3c");
+    for(let i=0;i<40;i++)P(A,rnd()*LW,rnd()*46,rnd()<0.15?"#fff":"#8a80b8"); // étoiles
+    for(let dx=-5;dx<=5;dx++)for(let dy=-5;dy<=5;dy++)if(dx*dx+dy*dy<=22&&!(((dx+2)*(dx+2)+(dy)*(dy))<=10))P(A,196+dx,14+dy,"#f0ecc8"); // croissant
+    const twr=(x,w,h)=>{rectW(B,x,GY+8-h,w,h,"#2a2142");rectW(B,x+1,GY+8-h-3,w-2,3,"#342a4e");
+      for(let r=0;r<Math.floor(h/12);r++)for(let c=0;c<Math.floor(w/8);c++){rectW(B,x+3+c*8,GY+2-h+8+r*12,3,4,rnd()<0.7?"#ffb84a":"#4a3a66");}};
+    twr(20,26,52);twr(90,34,64);twr(170,24,46);twr(215,20,38);
+    for(let i=0;i<8;i++){const x=rnd()*LW;rectW(C,x,GY+4,5,7,"#463a5e");P(C,x+1,GY+3,"#463a5e");P(C,x+2,GY+3,"#463a5e");} // tombes
+    grassEdge(C,GY,LH-GY,"#3a3050","#2c2440","#1f1a30",rnd);
+    for(let i=0;i<3;i++){const x=rnd()*LW,y=GY-8-rnd()*10;P(B,x,y,"#b8a8ff");P(B,x,y-1,"#e0d8ff");} // feux follets
+  } else if(kind==="gym"){
+    // Dojo Pokémon : mur boisé dégradé, lanternes, bannières, tatamis
+    skyGrad(A,["#2e2416","#3c2f1c","#4a3a22","#584626"],0,LH);
+    for(let y=0;y<GY;y+=7)rectW(A,0,y,LW,1,"#00000022"); // lambris
+    // fenêtres shoji lumineuses
+    for(let i=0;i<4;i++){const x=18+i*62;
+      rectW(A,x,14,20,18,"#f5e8c8");rectW(A,x,14,20,1,"#6a5432");rectW(A,x,31,20,1,"#6a5432");
+      rectW(A,x+9,14,1,18,"#6a5432");rectW(A,x,22,20,1,"#6a5432");rectW(A,x-1,13,22,1,"#2a2012");}
+    // poutres du plafond
+    rectW(B,0,4,LW,3,"#2a2012");rectW(B,0,7,LW,1,"#6a5432");
+    // piliers vernis avec reflets
+    for(let i=0;i<5;i++){const x=8+i*52;
+      rectW(B,x,8,9,GY-4,"#4a3820");rectW(B,x+1,8,2,GY-4,"#6f5830");rectW(B,x+7,8,1,GY-4,"#2a2012");
+      rectW(B,x-2,6,13,3,"#5f4c28");rectW(B,x-2,GY+2,13,3,"#5f4c28");}
+    // lanternes rouges suspendues
+    for(let i=0;i<4;i++){const x=36+i*56;
+      P(B,x+2,9,"#2a2012");P(B,x+2,10,"#2a2012");
+      rectW(B,x,11,5,7,"#c8352a");rectW(B,x+1,12,1,5,"#ff7a5a");rectW(B,x+1,18,3,1,"#8a5a20");
+      P(B,x+2,19,"#ffd166");}
+    // bannières
+    for(let i=0;i<3;i++){const x=52+i*72;
+      rectW(B,x,8,10,30,"#b02c24");rectW(B,x,8,10,2,"#7a1c16");rectW(B,x+2,14,6,6,"#ffd166");
+      rectW(B,x,36,10,2,"#ffd166");P(B,x+4,39,"#ffd166");}
+    // estrade au fond
+    rectW(B,86,GY-8,68,10,"#5f4c28");rectW(B,88,GY-10,64,2,"#6f5830");rectW(B,86,GY+1,68,1,"#2a2012");
+    // tatamis (sol)
+    rectW(C,0,GY,LW,LH-GY,"#8a9a58");
+    for(let ty=GY;ty<LH;ty+=8){rectW(C,0,ty,LW,1,"#6a7a40");
+      for(let tx=((ty/8)%2)*16;tx<LW;tx+=32)rectW(C,tx,ty,1,8,"#6a7a40");}
+    rectW(C,0,GY,LW,1,"#a8b870"); // liseré clair
+    for(let i=0;i<10;i++){const x=12+i*24;P(C,x,GY+3+((i%3)*6),"#7a8a4c");} // usure
+  } else if(kind==="safari"){  } else if(kind==="safari"){
+    skyGrad(A,["#ffd888","#ffcf7a","#f8c06a","#f0b45e"],0,50);rectW(A,0,50,LW,LH-50,"#f0b45e");
+    for(let dx=-8;dx<=8;dx++)for(let dy=-8;dy<=8;dy++)if(dx*dx+dy*dy<=52)P(A,180+dx,20+dy,"#fff2c8"); // soleil
+    cloud(A,60,14,0.9,"#ffe8c0","#f0c890","#fff4d8");cloud(A,130,24,0.7,"#ffe8c0","#f0c890","#fff4d8");
+    mtnFine(B,40,GY+6,70,26,"#a08050","#b89868",false);mtnFine(B,200,GY+6,90,34,"#907044","#a88858",false);
+    treeFine(B,90,GY+6,1.0,"#5f7a24","#7a9a32","#9ab84a","#7a5c34");
+    treeFine(B,180,GY+4,0.7,"#5f7a24","#7a9a32","#9ab84a","#7a5c34");
+    grassEdge(C,GY,LH-GY,"#c8c060","#a0a048","#787838",rnd);
+    for(let i=0;i<34;i++)tuft(C,rnd()*LW,GY+3+rnd()*16,"#d8d070","#a0a048");
+  } else { // route — comme l'image de référence
+    skyGrad(A,["#8ad4f0","#9adcf2","#aee2f4","#c2eaf6","#d5f0fa"],0,GY-14);rectW(A,0,GY-14,LW,LH-GY+14,"#d5f0fa");
+    cloud(A,35,13,1.2);cloud(A,110,22,1.6);cloud(A,180,10,1.0);cloud(A,225,18,0.8);cloud(A,75,32,0.7);cloud(A,150,38,0.9);
+    mtnFine(B,50,GY-8,60,26,"#5a8c6a","#6fa47e",true);mtnFine(B,150,GY-8,80,32,"#4f8060","#649878",true);mtnFine(B,225,GY-8,50,20,"#5a8c6a","#6fa47e",true);
+    for(let i=0;i<6;i++)treeFine(B,rnd()*LW,GY-6,0.6+rnd()*0.3,"#1e6030","#2a7c3c","#42a050","#6a4a2c");
+    grassEdge(C,GY-10,8,"#8cd85a","#5aa83a","#3a7c2a",rnd); // bande d'herbe haute
+    rectW(C,0,GY-2,LW,7,"#d8b880"); // chemin
+    rectW(C,0,GY-2,LW,1,"#b89058");rectW(C,0,GY+4,LW,1,"#b89058");
+    for(let i=0;i<20;i++)P(C,rnd()*LW,GY-1+rnd()*5,"#c8a468");
+    grassEdge(C,GY+5,LH-GY-5,"#8cd85a","#5aa83a","#3a7c2a",rnd);
+    for(let i=0;i<22;i++)tuft(C,rnd()*LW,GY+8+rnd()*10,"#a8e878","#5aa83a");
+    for(let i=0;i<5;i++)flower(C,rnd()*LW,GY+9+rnd()*8,rnd()<0.5?"#e878a8":"#f0c848");
+  }
+  const out={a:cA.toDataURL(),b:cB.toDataURL(),c:cC.toDataURL()};
+  BG_CACHE[kind]=out;return out;
+}
+function ZoneBG({kind,paused}){
+  const L=buildLayers(kind);
+  if(!L)return null;
+  const lay=(url,dur,z)=>(
+    <div style={{position:"absolute",inset:0,zIndex:z,backgroundImage:`url(${url})`,backgroundRepeat:"repeat-x",backgroundSize:"auto 100%",imageRendering:"pixelated",
+      animation:`bgscroll ${dur}s linear infinite`,animationPlayState:paused?"paused":"running"}}/>
+  );
+  return(<div style={{position:"absolute",inset:0,overflow:"hidden"}}>
+    {lay(L.a,60,0)}{lay(L.b,26,1)}{lay(L.c,11,2)}
+  </div>);
+}
+// ── OBJETS TENUS ────────────────────────────────────────────────────────────
+const HELD={
+ leftovers:{name:"Restes",desc:"Régén. 1% PV max /2s"},
+ choiceband:{name:"Bandeau Choix",desc:"+30% Attaque",stat:"atk",mult:1.3},
+ luckyegg:{name:"Œuf Chance",desc:"+100% EXP pour le porteur"},
+ wiseglasses:{name:"Lunettes Sages",desc:"+30% Att. Spé.",stat:"spa",mult:1.3},
+ silkscarf:{name:"Mouchoir Soie",desc:"+20% attaques Normal",type:"Normal",mult:1.2},
+ charcoal:{name:"Charbon",desc:"+20% attaques Feu",type:"Fire",mult:1.2},
+ mysticwater:{name:"Eau Mystique",desc:"+20% attaques Eau",type:"Water",mult:1.2},
+ magnet:{name:"Aimant",desc:"+20% attaques Électrik",type:"Electric",mult:1.2},
+ miracleseed:{name:"Graine Miracle",desc:"+20% attaques Plante",type:"Grass",mult:1.2},
+ twistedspoon:{name:"Cuillère Tordue",desc:"+20% attaques Psy",type:"Psychic",mult:1.2},
+ hardstone:{name:"Pierre Dure",desc:"+20% attaques Roche",type:"Rock",mult:1.2},
+ softsand:{name:"Sable Doux",desc:"+20% attaques Sol",type:"Ground",mult:1.2},
+ blackbelt:{name:"Ceinture Noire",desc:"+20% attaques Combat",type:"Fighting",mult:1.2},
+};
+const HELD_IDS=Object.keys(HELD);
+// ── POOL D'ATTAQUES (espèce + pré-évolutions + CT compatibles) ─────────────
+const PREVO={};Object.values(DEX).forEach(d=>{if(d.evoTo&&DEX[d.evoTo])PREVO[d.evoTo]=d.id;});
+const TMS=["Body Slam","Take Down","Swift","Hyper Beam","Ice Beam","Thunderbolt","Flamethrower","Sludge Bomb","Earthquake","Rock Slide","Shadow Ball","Psychic","Aerial Ace","Brick Break","Surf","X-Scissor","Dazzling Gleam","Crunch"];
+function baseEvo(sp){let g=0;while(PREVO[sp]&&g++<6)sp=PREVO[sp];return sp;}
+function movePool(m,tms){
+  const seen=new Set(),pool=[];
+  const addL=(id,lv)=>LEARN[id].filter(([l])=>l<=lv).forEach(([,v])=>{if(MV[v]&&!seen.has(v)){seen.add(v);pool.push(v);}});
+  addL(m.sp,m.lv);let p=PREVO[m.sp],guard=0;
+  while(p&&guard++<6){addL(p,m.lv);p=PREVO[p];}
+  const d=DEX[m.sp];
+  (tms||[]).forEach(t=>{const ty=MV[t][1];if(MV[t]&&!seen.has(t)&&(ty===d.t1||ty===d.t2||ty==="Normal")){seen.add(t);pool.push(t);}});
+  return pool;
+}
+// ── MÉDAILLES D'EFFORT (arbre d'améliorations permanentes, démo) ───────────
+const MEDALS=[
+ {id:"atk",name:"🥊 Méd. Force",desc:"+2% dégâts infligés / niv",max:25,base:600,mult:1.38},
+ {id:"def",name:"🛡️ Méd. Garde",desc:"−1,5% dégâts subis / niv",max:25,base:600,mult:1.38},
+ {id:"gold",name:"💰 Méd. Fortune",desc:"+3% PokéDollars / niv",max:20,base:900,mult:1.42},
+ {id:"xp",name:"📚 Méd. Savoir",desc:"+3% EXP / niv",max:20,base:900,mult:1.42},
+ {id:"spd",name:"⚡ Méd. Célérité",desc:"+1% cadence d'attaque / niv",max:15,base:1400,mult:1.5},
+ {id:"egg",name:"🥚 Méd. Éclosion",desc:"+4% chance d'œuf / niv",max:10,base:2000,mult:1.55},
+];
+const medCost=(d,lv)=>Math.floor(d.base*Math.pow(d.mult,lv));
+// ── SUCCÈS ──────────────────────────────────────────────────────────────────
+const ACHS=[
+ {id:"b1",icon:"🪨",name:"Casseur de Rocs",desc:"Vaincre Pierre et gagner le Badge Roche",c:g=>g.badges.includes("Badge Roche")},
+ {id:"b2",icon:"💧",name:"Dompteur de Cascade",desc:"Vaincre Ondine et gagner le Badge Cascade",c:g=>g.badges.includes("Badge Cascade")},
+ {id:"b3",icon:"⚡",name:"Maître de la Foudre",desc:"Vaincre Major Bob et gagner le Badge Foudre",c:g=>g.badges.includes("Badge Foudre")},
+ {id:"b4",icon:"🌈",name:"Ranger Arc-en-ciel",desc:"Vaincre Erika et gagner le Badge Prisme",c:g=>g.badges.includes("Badge Prisme")},
+ {id:"b5",icon:"💜",name:"Briseur d'Âme",desc:"Vaincre Koga et gagner le Badge Âme",c:g=>g.badges.includes("Badge Âme")},
+ {id:"b6",icon:"🧠",name:"Casse-Tête",desc:"Vaincre Morgane et gagner le Badge Marais",c:g=>g.badges.includes("Badge Marais")},
+ {id:"b7",icon:"🌋",name:"Vainqueur du Volcan",desc:"Vaincre Auguste et gagner le Badge Volcan",c:g=>g.badges.includes("Badge Volcan")},
+ {id:"b8",icon:"🌍",name:"Fissureur de Terre",desc:"Vaincre Giovanni et gagner le Badge Terre",c:g=>g.badges.includes("Badge Terre")},
+ {id:"lig",icon:"👑",name:"Maître de la Ligue",desc:"Vaincre Peter et le Conseil 4",c:g=>g.badges.includes("Maître de la Ligue")},
+ {id:"mew",icon:"🔮",name:"Face au Génome",desc:"Vaincre Mewtwo dans la Grotte Azurée",c:g=>g.badges.includes("Vainqueur de Kanto")},
+ {id:"mewc",icon:"🟣",name:"Attrapé !",desc:"Capturer Mewtwo avec la Master Ball",c:g=>Object.keys(g.mbUsed||{}).length>0},
+ {id:"d10",icon:"📕",name:"Apprenti Chercheur",desc:"Capturer 10 espèces au Pokédex",c:g=>Object.values(g.dex).filter(d=>d.caught>0).length>=10},
+ {id:"d50",icon:"📗",name:"Assistant du Prof",desc:"Capturer 50 espèces au Pokédex",c:g=>Object.values(g.dex).filter(d=>d.caught>0).length>=50},
+ {id:"d100",icon:"📘",name:"Expert Régional",desc:"Capturer 100 espèces au Pokédex",c:g=>Object.values(g.dex).filter(d=>d.caught>0).length>=100},
+ {id:"d151",icon:"🏆",name:"Pokédex Complet !",desc:"Capturer les 151 espèces de Kanto",c:g=>Object.values(g.dex).filter(d=>d.caught>0).length>=151},
+ {id:"s1",icon:"✨",name:"Éclat Rare",desc:"Rencontrer ton premier Shiny",c:g=>g.life.shinies>=1},
+ {id:"s5",icon:"🌟",name:"Chasseur de Chromatiques",desc:"Rencontrer 5 Shiny",c:g=>g.life.shinies>=5},
+ {id:"k100",icon:"⚔️",name:"Première Centaine",desc:"Vaincre 100 Pokémon",c:g=>g.life.kills>=100},
+ {id:"k1000",icon:"🗡️",name:"Vétéran des Routes",desc:"Vaincre 1 000 Pokémon",c:g=>g.life.kills>=1000},
+ {id:"k10000",icon:"☠️",name:"Légende Vivante",desc:"Vaincre 10 000 Pokémon",c:g=>g.life.kills>=10000},
+ {id:"e1",icon:"🥚",name:"Ça bouge là-dedans...",desc:"Faire éclore ton premier œuf",c:g=>g.life.eggs>=1},
+ {id:"e25",icon:"🐣",name:"Couveur Passionné",desc:"Faire éclore 25 œufs",c:g=>g.life.eggs>=25},
+ {id:"pen",icon:"🏠",name:"Air de Famille",desc:"Faire éclore un œuf de la Pension",c:g=>g.life.pension>=1},
+ {id:"ev1",icon:"🌟",name:"Métamorphose",desc:"Faire évoluer un Pokémon",c:g=>g.life.evos>=1},
+ {id:"ev10",icon:"💫",name:"Éleveur Accompli",desc:"Faire évoluer 10 Pokémon",c:g=>g.life.evos>=10},
+ {id:"lv32",icon:"📈",name:"Plafond de Verre",desc:"Atteindre le niveau 32 (cap Normal)",c:g=>g.life.maxLv>=32},
+ {id:"lv52",icon:"🔥",name:"Au-delà du Cauchemar",desc:"Atteindre le niveau 52",c:g=>g.life.maxLv>=52},
+ {id:"lv77",icon:"😈",name:"Rescapé de l'Enfer",desc:"Atteindre le niveau 77",c:g=>g.life.maxLv>=77},
+ {id:"lv100",icon:"💯",name:"Perfection",desc:"Atteindre le niveau 100",c:g=>g.life.maxLv>=100},
+ {id:"m100k",icon:"💰",name:"Petit Magot",desc:"Gagner 100 000₽ au total",c:g=>g.life.money>=100000},
+ {id:"m1m",icon:"🏦",name:"Millionnaire",desc:"Gagner 1 000 000₽ au total",c:g=>g.life.money>=1000000},
+ {id:"tm9",icon:"💿",name:"Collectionneur de CT",desc:"Obtenir les 9 CT des champions",c:g=>g.tms.length>=9},
+ {id:"th",icon:"🕵️",name:"Monte-en-l'air",desc:"Voler un objet avec Larcin",c:g=>(g.life.steals||0)>=1},
+ {id:"med",icon:"🏅",name:"Premier Effort",desc:"Acheter une Médaille d'Effort",c:g=>Object.values(g.medals).some(v=>v>0)},
+ {id:"medmax",icon:"🥇",name:"Effort Maximal",desc:"Monter une Médaille au niveau max",c:g=>MEDALS.some(d=>g.medals[d.id]>=d.max)},
+ {id:"a2",icon:"🌙",name:"Bienvenue en Cauchemar",desc:"Terminer l'Acte I en Normal",c:g=>g.diffMax>=1},
+ {id:"a3",icon:"🔥",name:"Aux Portes de l'Enfer",desc:"Terminer l'Acte I en Cauchemar",c:g=>g.diffMax>=2},
+ {id:"a4",icon:"😈",name:"Tourmenté",desc:"Terminer l'Acte I en Enfer",c:g=>g.diffMax>=3},
+];
+// ── DIFFICULTÉ (paliers façon Taskbar Heroes) ──────────────────────────────
+const DIFFS=[{name:"Normal",lo:2,hi:32,col:"#4caf50"},{name:"Cauchemar",lo:33,hi:52,col:"#ff9800"},{name:"Enfer",lo:53,hi:77,col:"#e63946"},{name:"Tourment",lo:78,hi:100,col:"#9c27b0"}];
+const scaleLv=(lv,diff)=>{const D=DIFFS[diff];return Math.max(D.lo,Math.min(100,Math.round(D.lo+(lv-2)*(D.hi-D.lo)/68)));};
+// ── INIT / SAVE ─────────────────────────────────────────────────────────────
+function initG(){
+  return{money:0,route:0,maxRoute:0,wave:0,trainerFight:false,
+    team:[],box:[],dex:{},badges:[],items:{},tms:[],diff:0,gymIdx:0,medals:{atk:0,def:0,gold:0,xp:0,spd:0,egg:0},pension:{a:null,b:null,prog:0,need:150},life:{kills:0,eggs:0,shinies:0,evos:0,steals:0,money:0,maxLv:5,pension:0},ach:{},diffMax:0,vol:0.5,mbUsed:{},
+    kills:0,eggs:0,shinies:0,
+    enemies:[],trIdx:0,heldInv:[],floats:[],fid:0,log:["Bienvenue dans Taskbar Pokémon ! Choisis ton starter."]};
+}
+function mkWild(g){
+  const r=ROUTES[g.route];
+  const[id,mn,mx]=r.enc[Math.floor(Math.random()*r.enc.length)];
+  const lv=scaleLv(mn+Math.floor(Math.random()*(mx-mn+1)),g.diff);
+  const m=mkMon(id,lv,g.items.shinycharm?3:1);
+  if(Math.random()<0.04)m.item=HELD_IDS[Math.floor(Math.random()*HELD_IDS.length)];
+  m.stats=calcStats(m);m.atkCd=2500;m.uid=UID++;m.mvIdx=0;
+  g.dex[id]=g.dex[id]||{seen:0,caught:0};g.dex[id].seen++;
+  return m;
+}
+function blog(g,txt){g.blog=g.blog||[];g.blog.unshift({t:txt,id:g.fid++});if(g.blog.length>40)g.blog.length=40;}
+function spawnWave(g){
+  if(g.route===0){g.enemies=[mkWild(g)];return;} // Route 1 très douce : 1 seul ennemi
+  const base=2+Math.floor(g.route/9);
+  const n=Math.min(4,base+(Math.random()<0.35?1:0));
+  g.enemies=Array.from({length:n},()=>mkWild(g));
+}
+function cityTrainers(r){return r.tr.gym?[...(r.pre||[]),r.tr]:[r.tr];}
+function curTrainer(g){const r=ROUTES[g.route];return cityTrainers(r)[Math.min(g.gymIdx,cityTrainers(r).length-1)];}
+function mkTrainerMon(g){
+  const t=curTrainer(g);const[id,lv]=t.team[g.trIdx];
+  const m=mkMon(id,scaleLv(lv,g.diff),g.items.shinycharm?3:1);
+  if(t.boss){const s2=calcStats(m);m.maxHp=s2.hp*6;m.hp=m.maxHp;m.mod={atk:1.25,spa:1.25};} // Mewtwo : PV ×6, dégâts +25%
+  m.stats=calcStats(m);m.atkCd=2200;m.uid=UID++;m.mvIdx=0;
+  g.dex[id]=g.dex[id]||{seen:0,caught:0};g.dex[id].seen++;
+  return m;
+}
+
+// ═══ COMPONENT ═══════════════════════════════════════════════════════════════
+function EvoPopup({evo,onDone}){
+  const[phase,setPhase]=useState(0); // 0 avant · 1 flash · 2 après
+  useEffect(()=>{
+    setPhase(0);
+    const t1=setTimeout(()=>setPhase(1),1400);
+    const t2=setTimeout(()=>setPhase(2),3400);
+    const t3=setTimeout(onDone,6200);
+    return()=>{clearTimeout(t1);clearTimeout(t2);clearTimeout(t3);};
+  },[evo]);
+  const d1=DEX[evo.from],d2=DEX[evo.to];
+  return(
+  <div style={{position:"fixed",inset:0,background:"#000d",zIndex:80,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14}}>
+    <div style={{fontSize:9,color:"#fff",textAlign:"center",lineHeight:"16px"}}>
+      {phase<2?`Quoi ? ${d1.name} évolue !`:`Félicitations ! ${d1.name} a évolué en ${d2.name} !`}
+    </div>
+    <div style={{position:"relative",width:120,height:120,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      {phase===1&&<div className="evo-flash" style={{position:"absolute",inset:-24,borderRadius:"50%",background:"radial-gradient(circle,#fff,#fff0)"}}/>}
+      <div className={phase===1?"evo-shake":""} style={{filter:phase===1?"brightness(0) invert(1)":"none",transition:"filter .3s"}}>
+        <Sprite sp={phase<2?evo.from:evo.to} shiny={evo.shiny} size={110}/>
+      </div>
+      {phase===2&&[...Array(8)].map((_,i)=>(<div key={i} className="evo-star" style={{position:"absolute",left:"50%",top:"50%",animationDelay:`${i*0.12}s`,transform:`rotate(${i*45}deg)`}}>✦</div>))}
+    </div>
+    {phase===2&&<div style={{fontSize:7,color:"#ffd166"}}>✨ {d2.name} ✨</div>}
+    <button className="bt" onClick={onDone} style={{marginTop:6}}>Continuer ▶</button>
+  </div>);
+}
+class EB extends Component{
+  constructor(p){super(p);this.state={err:null};}
+  static getDerivedStateFromError(e){return{err:e};}
+  render(){if(this.state.err)return <pre style={{color:"#f66",background:"#200",padding:16,fontSize:11,whiteSpace:"pre-wrap"}}>ERREUR: {String(this.state.err&&this.state.err.message||this.state.err)}</pre>;return this.props.children;}
+}
+function App(){return <EB><TaskbarPokemon/></EB>;}
+function TaskbarPokemon(){
+  const g=useRef(null);
+  if(!g.current){g.current=initG();spawnWave(g.current);}
+  const[,force]=useState(0);
+  const[tab,setTab]=useState("map");
+  const[dexSel,setDexSel]=useState(null);
+  const[selMon,setSelMon]=useState(null);
+  const[mvSlot,setMvSlot]=useState(null);
+  const[info,setInfo]=useState(null); // {title,tag,body}
+  const[confirmRel,setConfirmRel]=useState(null);
+  const[evo,setEvo]=useState(null); // {from,to,shiny}
+  const[boxSort,setBoxSort]=useState("lv");
+  const[boxShiny,setBoxShiny]=useState(false);
+  const[jFull,setJFull]=useState(false);
+  const[diffSel,setDiffSel]=useState(false);
+  const[dexShiny,setDexShiny]=useState(false);
+  const[confirmReset,setConfirmReset]=useState(false);
+  const[pensionPick,setPensionPick]=useState(null);
+  const rr=()=>force(x=>x+1);
+
+  useEffect(()=>{
+    const iv=setInterval(()=>{
+      const gs=g.current;let dirty=false;
+      if(gs.floats.length>10)gs.floats=gs.floats.slice(-10);
+      gs.floats=gs.floats.map(f=>({...f,ttl:f.ttl-TICK})).filter(f=>f.ttl>0);
+      if(gs.enemies.length===0){
+        if(gs.team.length===0){rr();return;} // starter pas encore choisi
+        const r0=ROUTES[gs.route];
+        if((r0.tr.gym||r0.solo)&&!gs.trainerFight){gs.trainerFight=true;gs.gymIdx=0;gs.trIdx=0;gs.log.unshift(`🏛️ ${r0.name} — ${cityTrainers(r0)[0].name} s'avance !`);}
+        gs.trainerFight?gs.enemies=[mkTrainerMon(gs)]:spawnWave(gs);rr();return;}
+      const alive=gs.team.filter(m=>m.hp>0);
+      if(alive.length===0){
+        gs.team.forEach(m=>{m.hp=m.maxHp;m.actCd=0;m.mvIdx=0;});
+        gs.wave=0;gs.trIdx=0;gs.gymIdx=0;gs.team.forEach(m=>{m.mod={};});
+        const rw=ROUTES[gs.route];
+        if(rw.tr.gym||rw.solo){gs.trainerFight=true;gs.enemies=[mkTrainerMon(gs)];}
+        else{gs.trainerFight=false;spawnWave(gs);}
+        gs.log.unshift("💀 Équipe K.O. ! On reprend depuis le début.");
+        rr();return;
+      }
+      // Restes : régénération
+      for(const m of alive)if(m.item==="leftovers"&&m.hp<m.maxHp){m._lf=(m._lf||0)+TICK;if(m._lf>=2000){m._lf=0;m.hp=Math.min(m.maxHp,m.hp+Math.max(1,Math.floor(m.maxHp*0.01)));dirty=true;}}
+      // ── STATUTS : dégâts sur la durée + réveil/dégel ──
+      const tickStatus=(e,isTeam)=>{
+        if(!e.status)return;
+        e.statusT+=TICK;
+        if(e.status==="psn"||e.status==="brn"){
+          if(e.statusT>=3000){e.statusT=0;
+            const dot=Math.max(1,Math.floor(e.maxHp*(e.status==="psn"?0.08:0.06)));
+            e.hp=Math.max(0,e.hp-dot);
+            gs.floats.push({id:gs.fid++,text:`${STATUS_BADGE[e.status][0]} -${dot}`,c:STATUS_BADGE[e.status][1],side:isTeam?"team":"enemy",ttl:800});
+            if(e.hp===0)blog(gs,`💀 ${DEX[e.sp].name} succombe à son ${e.status==="psn"?"empoisonnement":"sa brûlure"} !`);
+            dirty=true;
+          }
+        }else if(e.status==="slp"||e.status==="frz"){
+          if(e.statusT>=e.statusDur){
+            blog(gs,`⏰ ${DEX[e.sp].name} ${e.status==="slp"?"se réveille":"dégèle"} !`);
+            e.status=null;e.statusT=0;dirty=true;
+          }
+        }
+      };
+      for(const m of alive)tickStatus(m,true);
+      for(const en of gs.enemies)if(en.hp>0)tickStatus(en,false);
+
+      // ── APPLIQUER une attaque (moteur commun équipe/ennemi) ──
+      const applyMove=(user,mvN,userStats,targets,isTeamSide)=>{
+        // isTeamSide = l'attaquant est dans NOTRE équipe
+        const md=MV[mvN];if(!md)return;
+        const[pw,ty,,cat,acc]=md;const fx=md[5]||{};
+        const sideT=isTeamSide?"enemy":"team"; // côté des cibles
+        const uName=DEX[user.sp].name+(isTeamSide?"":" adverse");
+        // Précision
+        if(acc<999&&Math.random()*100>=acc){
+          gs.floats.push({id:gs.fid++,text:`${frn(mvN)}... raté !`,c:"#8a94b8",side:sideT,ttl:900});
+          blog(gs,`💨 ${uName} → ${frn(mvN)} : ÉCHEC, l'attaque rate !`);
+          return;
+        }
+        // Statut pur
+        if(cat==="St"){
+          if(fx.none){blog(gs,`💤 ${uName} → ${frn(mvN)}... mais il ne se passe rien !`);return;}
+          if(fx.healSelf){if(user.hp<user.maxHp){const h=Math.max(1,Math.floor(user.maxHp*fx.healSelf/100));user.hp=Math.min(user.maxHp,user.hp+h);gs.floats.push({id:gs.fid++,text:`${frn(mvN)} +${h}`,c:"#78C850",side:isTeamSide?"team":"enemy",ttl:1000});blog(gs,`💚 ${uName} → ${frn(mvN)} : récupère ${h} PV`);}return;}
+          if(fx.healAlly){
+            const pool=isTeamSide?gs.team:gs.enemies;
+            const tg=pool.filter(x=>x.hp>0&&x.hp<x.maxHp).sort((a,b)=>(a.hp/a.maxHp)-(b.hp/b.maxHp))[0];
+            if(tg){const h=Math.max(1,Math.floor(tg.maxHp*fx.healAlly/100));tg.hp=Math.min(tg.maxHp,tg.hp+h);
+              gs.floats.push({id:gs.fid++,text:`${frn(mvN)} +${h}`,c:"#78C850",side:isTeamSide?"team":"enemy",ttl:1000});
+              blog(gs,`💚 ${uName} → ${frn(mvN)} : +${h} PV pour ${DEX[tg.sp].name}`);}
+            return;}
+          if(fx.sUp){modStep(user,fx.sUp[0],false);gs.floats.push({id:gs.fid++,text:`${frn(mvN)} ▲`,c:"#7ec8e3",side:isTeamSide?"team":"enemy",ttl:900});blog(gs,`🔺 ${uName} → ${frn(mvN)} : ${STAT_FR[fx.sUp[0]]} augmente`);return;}
+          const tgt0=targets[0];if(!tgt0)return;
+          if(fx.slp){if(tryStatus(tgt0,"slp")){gs.floats.push({id:gs.fid++,text:`💤 Endormi !`,c:STATUS_BADGE.slp[1],side:sideT,ttl:1100});blog(gs,`💤 ${uName} → ${frn(mvN)} : ${DEX[tgt0.sp].name} s'endort !`);}else blog(gs,`${uName} → ${frn(mvN)} : sans effet (déjà affecté).`);return;}
+          if(fx.tDn){if(Math.random()*100<fx.tDn[1]){modStep(tgt0,fx.tDn[0],true);gs.floats.push({id:gs.fid++,text:`${frn(mvN)} ▼`,c:"#c0a8ff",side:sideT,ttl:900});blog(gs,`🔻 ${uName} → ${frn(mvN)} : ${STAT_FR[fx.tDn[0]]} de ${DEX[tgt0.sp].name} baisse`);}return;}
+          return;
+        }
+        // Attaque offensive
+        const hitOne=(tgt,mult)=>{
+          const ts=isTeamSide?tgt.stats:calcStats(tgt); // ennemis: stats précalc; équipe cible: calc
+          const tStats=isTeamSide?tgt.stats:calcStats(tgt);
+          const raw=dmgCalc(user,mvN,tgt,tStats,userStats);
+          let dmg=Math.max(1,Math.floor(raw.dmg*mult*(isTeamSide?(1+gs.medals.atk*0.02):(1-gs.medals.def*0.015))));
+          tgt.hp=Math.max(0,tgt.hp-dmg);
+          const effTxt=raw.eff>=2?" — SUPER EFFICACE ✨":raw.eff===0?" — aucun effet ∅":raw.eff<1?" — peu efficace ▽":"";
+          gs.floats.push({id:gs.fid++,text:`${frn(mvN)} -${dmg}${raw.eff>1?" ✨":raw.eff<1?" ▽":""}`,c:isTeamSide?TC[ty]:"#ff6b6b",side:sideT,ttl:1000});
+          blog(gs,`${isTeamSide?"⚔️":"🛡️"} ${uName} → ${frn(mvN)} : −${dmg} PV sur ${DEX[tgt.sp].name}${effTxt}`);
+          // effets secondaires
+          if(fx.drain){const h=Math.max(1,Math.floor(dmg*fx.drain/100));user.hp=Math.min(user.maxHp,user.hp+h);gs.floats.push({id:gs.fid++,text:`+${h} 🩸`,c:"#78C850",side:isTeamSide?"team":"enemy",ttl:900});}
+          if(fx.brn&&Math.random()*100<fx.brn&&tryStatus(tgt,"brn"))blog(gs,`🔥 ${DEX[tgt.sp].name} est BRÛLÉ !`);
+          if(fx.par&&Math.random()*100<fx.par&&tryStatus(tgt,"par"))blog(gs,`⚡ ${DEX[tgt.sp].name} est PARALYSÉ !`);
+          if(fx.frz&&Math.random()*100<fx.frz&&tryStatus(tgt,"frz"))blog(gs,`❄️ ${DEX[tgt.sp].name} est GELÉ !`);
+          if(fx.psn&&Math.random()*100<fx.psn&&tryStatus(tgt,"psn"))blog(gs,`☠️ ${DEX[tgt.sp].name} est EMPOISONNÉ !`);
+          if(fx.tDn&&Math.random()*100<fx.tDn[1]){modStep(tgt,fx.tDn[0],true);blog(gs,`🔻 ${STAT_FR[fx.tDn[0]]} de ${DEX[tgt.sp].name} baisse`);}
+          if(fx.steal&&isTeamSide&&!user.item&&tgt.item){user.item=tgt.item;tgt.item=null;blog(gs,`🕵️ ${uName} VOLE ${HELD[user.item].name} !`);gs.life.steals=(gs.life.steals||0)+1;}
+          if(tgt.hp===0){
+            if(isTeamSide)onEnemyDead(gs,tgt);
+            else{blog(gs,`💀 ${DEX[tgt.sp].name} est K.O. !`);playCry(tgt.sp,gs.vol);}
+          }
+          return dmg;
+        };
+        let total=0;
+        if(fx.aoe){
+          const list=targets.filter(t=>t.hp>0);
+          gs.floats.push({id:gs.fid++,text:TYPE_EMOJI[ty],side:sideT,big:true,ttl:600});
+          for(const t of list)total+=hitOne(t,0.75);
+        }else{
+          const tgt=targets.find(t=>t.hp>0);if(!tgt)return;
+          gs.floats.push({id:gs.fid++,text:TYPE_EMOJI[ty],side:sideT,big:true,ttl:600});
+          total=hitOne(tgt,1);
+        }
+        if(fx.recoil&&total>0){const rc=Math.max(1,Math.floor(total*fx.recoil/100));user.hp=Math.max(0,user.hp-rc);gs.floats.push({id:gs.fid++,text:`recul -${rc}`,c:"#e67946",side:isTeamSide?"team":"enemy",ttl:900});if(user.hp===0)blog(gs,`💥 ${uName} tombe K.O. de son recul !`);}
+        if(fx.selfKO){user.hp=0;blog(gs,`💥 ${uName} explose et tombe K.O. !`);}
+        if(fx.sDn){modStep(user,fx.sDn[0],true);}
+      };
+
+      // ── Peut agir ? (paralysie / gel / sommeil) ──
+      const canAct=(e)=>{
+        if(e.status==="frz"||e.status==="slp")return false;
+        if(e.status==="par"&&Math.random()<0.20){blog(gs,`⚡ ${DEX[e.sp].name} est paralysé, il ne peut pas attaquer !`);return false;}
+        return true;
+      };
+
+      // ── Attaques ennemies (le tank/1er vivant encaisse les coups directs) ──
+      const isLeaderFight=gs.trainerFight&&ROUTES[gs.route].tr.gym&&gs.gymIdx===cityTrainers(ROUTES[gs.route]).length-1;
+      for(const en of gs.enemies){
+        if(en.hp<=0)continue;
+        en.atkCd-=TICK;
+        if(en.atkCd>0)continue;
+        const eMoves=learnedAt(en.sp,en.lv).slice(-4);
+        const front=gs.team.find(m2=>m2.hp>0);
+        if(!front)break;
+        let mvN;
+        if(isLeaderFight){
+          let best=null,bv=-1;
+          for(const cand of eMoves){const md=MV[cand];if(!md)continue;
+            const fd=DEX[front.sp];
+            const v=md[0]>0?md[0]*tEff(md[1],fd.t1,fd.t2)*((md[1]===DEX[en.sp].t1||md[1]===DEX[en.sp].t2)?1.5:1)*(md[4]<999?md[4]/100:1):(en.hp<en.maxHp*0.4&&(md[5]||{}).healSelf?999:8);
+            if(v>bv){bv=v;best=cand;}}
+          mvN=best||eMoves[0];
+        }else{
+          en.mvIdx=Number.isInteger(en.mvIdx)?en.mvIdx%eMoves.length:0;
+          mvN=eMoves[en.mvIdx];en.mvIdx=(en.mvIdx+1)%eMoves.length;
+        }
+        const parMult=en.status==="par"?1.5:1;
+        en.atkCd=Math.floor((actionItv(en.stats.spe*((en.mod||{}).spe||1),mvN)+400)*parMult);en.actMax=en.atkCd;
+        if(!canAct(en)){dirty=true;continue;}
+        // cibles : coups directs → [tank] ; AOE → toute l'équipe vivante
+        applyMove(en,mvN,en.stats,(MV[mvN][5]||{}).aoe?gs.team.filter(x=>x.hp>0):[front],false);
+        dirty=true;
+      }
+
+      // ── Attaques de l'équipe ──
+      for(const m of alive){
+        if(m.hp<=0)continue;
+        const ms=calcStats(m);
+        m.actCd-=TICK;
+        if(m.actCd>0)continue;
+        if(!m.moves.length){m.actCd=2000;continue;}
+        m.mvIdx=Number.isInteger(m.mvIdx)?m.mvIdx%m.moves.length:0;
+        const mvN=m.moves[m.mvIdx];
+        m.lastIdx=m.mvIdx;
+        m.mvIdx=(m.mvIdx+1)%m.moves.length;
+        const medSpd=1-(gs.medals?.spd||0)*0.01;
+        const parMult=m.status==="par"?1.5:1;
+        m.actCd=Math.floor(actionItv(ms.spe*((m.mod||{}).spe||1),mvN)*medSpd*parMult);m.actMax=m.actCd;
+        if(!MV[mvN])continue;
+        if(!canAct(m)){dirty=true;continue;}
+        const aliveEn=gs.enemies.filter(e=>e.hp>0);
+        if(!aliveEn.length)break;
+        applyMove(m,mvN,ms,aliveEn,true);
+        dirty=true;
+      }
+
+      // Vague terminée ?
+      if(gs.enemies.length>0&&gs.enemies.every(e=>e.hp<=0)){
+        const r=ROUTES[gs.route];
+        gs.team.forEach(m=>{m.mod={};}); // fin de vague : reset des modificateurs
+        if(gs.trainerFight){
+          gs.trIdx++;
+          const t=curTrainer(gs);
+          if(gs.trIdx>=t.team.length){
+            const list=cityTrainers(r);
+            if(r.tr.gym&&gs.gymIdx<list.length-1){
+              // dresseur intermédiaire d'arène vaincu
+              gs.money+=Math.floor(t.cash/2);
+              gs.log.unshift(`🏆 ${t.name} vaincu ! +${Math.floor(t.cash/2)}₽`);
+              gs.gymIdx++;gs.trIdx=0;
+              gs.team.forEach(m=>{m.hp=Math.min(m.maxHp,m.hp+Math.floor(m.maxHp*0.4));});
+              gs.enemies=[mkTrainerMon(gs)];
+            }else onTrainerDefeated(gs,r);
+          }
+          else gs.enemies=[mkTrainerMon(gs)];
+        }else{
+          gs.wave++;
+          if(gs.wave>=(gs.route===0?6:WAVES)){gs.trainerFight=true;gs.trIdx=0;gs.enemies=[mkTrainerMon(gs)];gs.log.unshift(`⚔️ ${r.tr.name} te défie !`);}
+          else spawnWave(gs);
+        }
+        dirty=true;
+      }
+      gs.achT=(gs.achT||0)+TICK;
+      if(gs.achT>=1000){gs.achT=0;
+        for(const a of ACHS){if(!gs.ach[a.id]&&a.c(gs)){gs.ach[a.id]=Date.now();
+          gs.log.unshift(`🏆 SUCCÈS débloqué : ${a.icon} ${a.name} !`);
+          gs.floats.push({id:gs.fid++,text:`🏆 ${a.name} !`,c:"#ffd166",side:"team",ttl:2600});dirty=true;}}
+      }
+      if(gs.evoQueue&&gs.evoQueue.length&&!gs.evoShowing){gs.evoShowing=true;setEvo(gs.evoQueue.shift());}
+      if(dirty||gs.floats.length)rr();
+    },TICK);
+    return()=>clearInterval(iv);
+  },[]);
+
+  function onEnemyDead(gs,en){
+    gs.kills++;gs.life.kills++;playCry(en.sp,gs.vol);
+    // ₽ très réduits — il faut farmer
+    const base=Math.max(1,Math.ceil(en.lv*(gs.trainerFight?1.6:0.5)));
+    const cash=Math.floor(base*(gs.items.amulet?1.5:1)*(1+gs.medals.gold*0.03));
+    gs.money+=cash;gs.life.money+=cash;
+    let xpMult=(gs.items.expshare?1.5:1)*(1+gs.medals.xp*0.03);
+    // XP très réduite (÷~3 encore) — courbe cubique lente
+    const DXP=[1.5,1,0.85,0.7][gs.diff];
+    const xpGain=Math.max(1,Math.floor(en.lv*2.2*DXP*xpMult*(gs.trainerFight?2:1)*(gs.route===0?5:1)));
+    gs.floats.push({id:gs.fid++,text:`+${cash}₽`,c:"#ffd166",side:"enemy",ttl:1200});
+    if(gs.team.some(m=>m.hp>0&&m.abi==="Ramassage")){
+      if(Math.random()<0.25){
+        const bonus=Math.max(1,Math.floor(cash*0.5));gs.money+=bonus;
+        gs.floats.push({id:gs.fid++,text:`😺 +${bonus}₽`,c:"#ffd166",side:"enemy",ttl:1400});
+      }
+      if(en.item&&Math.random()<0.2){
+        gs.heldInv.push(en.item);
+        gs.log.unshift(`😺 Ramassage récupère ${HELD[en.item].name} !`);
+        gs.floats.push({id:gs.fid++,text:`😺 ${HELD[en.item].name} !`,c:"#9c88ff",side:"enemy",ttl:1800});
+        en.item=null;
+      }
+    }
+    // Pension : l'œuf progresse à chaque victoire sauvage
+    if(!gs.trainerFight&&gs.pension.a&&gs.pension.b){
+      gs.pension.prog++;
+      if(gs.pension.prog>=gs.pension.need){
+        gs.pension.prog=0;
+        const pa=[...gs.team,...gs.box].find(x=>x.uid===gs.pension.a);
+        const pb=[...gs.team,...gs.box].find(x=>x.uid===gs.pension.b);
+        if(pa&&pb){
+          const src=(pa.sp===132?pb:pa);
+          const baby=mkMon(baseEvo(src.sp),5,(gs.items.shinycharm?3:1)*6);
+          // hérite des 3 meilleures IV parmi les parents (3 stats aléatoires)
+          const stats=["hp","atk","def","spa","spd","spe"].sort(()=>Math.random()-0.5).slice(0,3);
+          stats.forEach(k=>{baby.iv[k]=Math.max(pa.iv[k],pb.iv[k]);});
+          const bs=calcStats(baby);baby.maxHp=bs.hp;baby.hp=bs.hp;
+          gs.box.push(baby);gs.eggs++;gs.life.eggs++;gs.life.pension++;
+          gs.dex[baby.sp]=gs.dex[baby.sp]||{seen:0,caught:0};gs.dex[baby.sp].seen++;gs.dex[baby.sp].caught++;
+          if(baby.shiny){gs.shinies++;gs.life.shinies++;gs.dex[baby.sp].shiny=(gs.dex[baby.sp].shiny||0)+1;gs.log.unshift("✨✨ L'ŒUF DE LA PENSION ÉTAIT SHINY !! ✨✨");}
+          gs.log.unshift(`🥚 Pension : ${DEX[baby.sp].name} éclot (IV héritées : ${stats.map(k=>STAT_FR[k]).join(", ")}) !`);
+        }
+      }
+    }
+    const evStat=evYield(en.sp);
+    gs.team.forEach(m=>{
+      if(m.hp<=0)return;
+      const tot=Object.values(m.ev).reduce((a,b)=>a+b,0);
+      if(m.ev[evStat]<252&&tot<510)m.ev[evStat]=Math.min(252,m.ev[evStat]+2);
+      m.xp+=Math.floor(xpGain*(m.item==="luckyegg"?2:1));
+      while(m.xp>=xpFor(m.lv+1)&&m.lv<100){
+        m.lv++;if(m.lv>gs.life.maxLv)gs.life.maxLv=m.lv;
+        // apprentissage officiel par niveau
+        LEARN[m.sp].filter(([l])=>l===m.lv).forEach(([,mvN])=>{
+          if(m.moves.includes(mvN))return;
+          if(m.moves.length<4){m.moves.push(mvN);gs.log.unshift(`📖 ${DEX[m.sp].name} apprend ${frn(mvN)} !`);}
+          else gs.log.unshift(`📖 ${DEX[m.sp].name} peut apprendre ${frn(mvN)} (via sa fiche) !`);
+        });
+        const ns=calcStats(m);const gain=ns.hp-m.maxHp;m.maxHp=ns.hp;m.hp=Math.min(ns.hp,m.hp+gain);
+        gs.floats.push({id:gs.fid++,text:`⬆ ${DEX[m.sp].name} Niv.${m.lv}`,c:"#7ec8e3",side:"team",ttl:1800});
+        const d=DEX[m.sp];
+        if(d.evoLv>0&&m.lv>=d.evoLv&&d.evoTo&&DEX[d.evoTo]){
+          const oldSp=m.sp;m.sp=d.evoTo;
+          const nd=DEX[m.sp];
+          const ns2=calcStats(m);m.maxHp=ns2.hp;m.hp=ns2.hp;m.actCd=0;m.mvIdx=0;
+          gs.dex[m.sp]=gs.dex[m.sp]||{seen:0,caught:0};gs.dex[m.sp].seen++;gs.dex[m.sp].caught++;
+          gs.log.unshift(`🌟 ${DEX[oldSp].name} évolue en ${nd.name} !`);
+          gs.evoQueue=gs.evoQueue||[];gs.evoQueue.push({from:oldSp,to:m.sp,shiny:m.shiny});gs.life.evos++;
+        }
+      }
+    });
+    if(en.shiny){gs.shinies++;gs.life.shinies++;}
+  }
+  function onTrainerDefeated(gs,r){
+    gs.money+=Math.floor(r.tr.cash/3);
+    gs.log.unshift(`🏆 ${r.tr.name} vaincu ! +${Math.floor(r.tr.cash/3)}₽`);
+    if(r.tr.badge&&!gs.badges.includes(r.tr.badge)){gs.badges.push(r.tr.badge);gs.log.unshift(`🎖️ ${r.tr.badge} obtenu !`);}
+    if(r.tr.tm&&!gs.tms.includes(r.tr.tm)){gs.tms.push(r.tr.tm);gs.log.unshift(`💿 CT obtenue : ${frn(r.tr.tm)} !`);}
+    const eggChance=gs.route===0?1:Math.min(0.9,0.35+gs.medals.egg*0.04);
+    if(!r.tr.gym&&Math.random()<eggChance){
+      // les boss de ROUTE peuvent donner un œuf (garanti Route 1, 35% ensuite)
+      const pool=r.enc;const eid=baseEvo(pool[Math.floor(Math.random()*pool.length)][0]);
+      const egg=mkMon(eid,scaleLv(Math.max(5,r.lv[0]),gs.diff),(gs.items.shinycharm?3:1)*6);
+      egg.iv.hp=16+Math.floor(Math.random()*16);egg.iv.atk=16+Math.floor(Math.random()*16);
+      const es=calcStats(egg);egg.maxHp=es.hp;egg.hp=es.hp;
+      gs.eggs++;
+      gs.dex[eid]=gs.dex[eid]||{seen:0,caught:0};gs.dex[eid].seen++;gs.dex[eid].caught++;
+      if(egg.shiny){gs.shinies++;gs.life.shinies++;gs.dex[eid].shiny=(gs.dex[eid].shiny||0)+1;gs.log.unshift(`✨✨ L'ŒUF ÉTAIT SHINY !! ✨✨`);}
+      if(gs.team.length<3){gs.team.push(egg);gs.log.unshift(`🥚 Œuf éclos : ${DEX[eid].name} rejoint l'équipe !`);}
+      else{gs.box.push(egg);gs.log.unshift(`🥚 Œuf éclos : ${DEX[eid].name} envoyé au PC !`);}
+    }else if(!r.tr.gym)gs.log.unshift(`…pas d'œuf cette fois. Rebats-le pour retenter (35%) !`);
+    // FIN D'ACTE → difficulté supérieure
+    if(r.tr.final){
+      // Master Ball : capture de Mewtwo !
+      if(gs.items.masterball&&!gs.mbUsed[gs.diff]){
+        delete gs.items.masterball;gs.mbUsed[gs.diff]=true;
+        const mew=mkMon(150,scaleLv(70,gs.diff));
+        const msx=calcStats(mew);mew.maxHp=msx.hp;mew.hp=msx.hp;
+        gs.box.push(mew);
+        gs.dex[150]=gs.dex[150]||{seen:0,caught:0};gs.dex[150].seen++;gs.dex[150].caught++;
+        if(mew.shiny){gs.dex[150].shiny=(gs.dex[150].shiny||0)+1;}
+        gs.log.unshift("🔮 MASTER BALL LANCÉE... MEWTWO EST CAPTURÉ !!! Il rejoint ton PC !");
+      }
+      if(gs.diff+1>gs.diffMax)gs.diffMax=Math.min(DIFFS.length-1,gs.diff+1);
+      if(gs.diff<DIFFS.length-1){
+        gs.diff++;
+        gs.route=0;gs.maxRoute=0;gs.gymIdx=0;
+        gs.log.unshift(`🔥🔥 ACTE I TERMINÉ ! Difficulté ${DIFFS[gs.diff].name} — niveaux ${DIFFS[gs.diff].lo}-${DIFFS[gs.diff].hi} !`);
+      }else gs.log.unshift(`👑 TOURMENT TERMINÉ. Tu es le Maître absolu de Kanto !`);
+      gs.wave=0;gs.trainerFight=false;gs.trIdx=0;gs.gymIdx=0;
+      gs.team.forEach(m=>{m.hp=m.maxHp;m.mod={};m.status=null;});
+      spawnWave(gs);return;
+    }
+    const justUnlocked=(gs.route===gs.maxRoute&&gs.maxRoute<ROUTES.length-1);
+    if(justUnlocked)gs.maxRoute++;
+    // Auto-avance SEULEMENT vers une route fraîchement débloquée (sinon on farme ici)
+    if(justUnlocked){
+      gs.route++;
+      gs.log.unshift(`➡️ Nouvelle zone : ${ROUTES[gs.route].name} !`);
+    }
+    gs.wave=0;gs.trainerFight=false;gs.trIdx=0;gs.gymIdx=0;
+    gs.team.forEach(m=>{m.hp=m.maxHp;m.actCd=0;m.mvIdx=0;});
+    const nr=ROUTES[gs.route];
+    if(nr.tr.gym||nr.solo){gs.trainerFight=true;gs.enemies=[mkTrainerMon(gs)];gs.log.unshift(`🏛️ ${nr.name} — l'arène t'attend !`);}
+    else spawnWave(gs);
+  }
+
+  const gs=g.current;const r=ROUTES[gs.route];
+  const goRoute=i=>{if(i>gs.maxRoute)return;gs.route=i;gs.wave=0;gs.trIdx=0;gs.gymIdx=0;
+    gs.team.forEach(m=>{m.hp=m.maxHp;m.actCd=0;m.mvIdx=0;m.mod={};m.status=null;});
+    const rt=ROUTES[i];
+    if(rt.tr.gym||rt.solo){gs.trainerFight=true;gs.enemies=[mkTrainerMon(gs)];gs.log.unshift(rt.solo?`⚡ ${rt.tr.name} t'attend au fond de la grotte...`:`🏛️ ${rt.name} — l'arène t'attend !`);}
+    else{gs.trainerFight=false;spawnWave(gs);}
+    rr();};
+  const swapMon=(uid)=>{
+    const bi=gs.box.findIndex(m=>m.uid===uid);if(bi===-1)return;
+    if(gs.team.length<3){gs.team.push(gs.box.splice(bi,1)[0]);}
+    else{const out=gs.team.shift();out.hp=out.maxHp;if(out.item){gs.heldInv.push(out.item);out.item=null;}gs.box.push(out);gs.team.push(gs.box.splice(gs.box.findIndex(m=>m.uid===uid),1)[0]);}
+    restartRoute();rr();
+  };
+  const restartRoute=()=>{
+    if(gs.wave>0||gs.trainerFight){
+      gs.wave=0;gs.trIdx=0;gs.gymIdx=0;
+      gs.team.forEach(m=>{m.hp=m.maxHp;m.actCd=0;m.mvIdx=0;m.mod={};m.status=null;});
+      const rt=ROUTES[gs.route];
+      if(rt.tr.gym||rt.solo){gs.trainerFight=true;gs.enemies=[mkTrainerMon(gs)];}
+      else{gs.trainerFight=false;spawnWave(gs);}
+      gs.log.unshift("🔄 Formation modifiée — la route recommence !");
+    }
+  };
+  const toBox=(uid)=>{if(gs.team.length<=1)return;const i=gs.team.findIndex(m=>m.uid===uid);if(i>-1){const m=gs.team.splice(i,1)[0];m.hp=m.maxHp;
+    if(m.item){gs.heldInv.push(m.item);gs.log.unshift(`🎒 ${HELD[m.item].name} rangé dans le sac.`);m.item=null;}
+    gs.box.push(m);restartRoute();rr();}};
+  const releaseMon=(uid)=>{const i=gs.box.findIndex(m=>m.uid===uid);if(i>-1){gs.money+=gs.box[i].lv*15;gs.box.splice(i,1);rr();}};
+  const buyItem=(it)=>{if(gs.items[it.id]||gs.money<it.cost)return;gs.money-=it.cost;gs.items[it.id]=true;gs.log.unshift(`🛍️ ${it.name} acheté !`);rr();};
+  // ── SAUVEGARDE AUTO + OFFLINE ──
+  const serialize=()=>{
+    const gs2=g.current;
+    return JSON.stringify({v:2,ts:Date.now(),money:gs2.money,route:gs2.route,maxRoute:gs2.maxRoute,badges:gs2.badges,items:gs2.items,tms:gs2.tms,diff:gs2.diff,diffMax:gs2.diffMax,medals:gs2.medals,life:gs2.life,ach:gs2.ach,vol:gs2.vol,mbUsed:gs2.mbUsed,dex:gs2.dex,kills:gs2.kills,eggs:gs2.eggs,shinies:gs2.shinies,heldInv:gs2.heldInv,
+      team:gs2.team.map(m=>({sp:m.sp,lv:m.lv,xp:m.xp,iv:m.iv,ev:m.ev,nature:m.nature,abi:m.abi,shiny:m.shiny,gender:m.gender,moves:m.moves,item:m.item})),
+      box:gs2.box.map(m=>({sp:m.sp,lv:m.lv,xp:m.xp,iv:m.iv,ev:m.ev,nature:m.nature,abi:m.abi,shiny:m.shiny,gender:m.gender,moves:m.moves,item:m.item}))});
+  };
+  const reviveMon=(o)=>{const m=mkMon(o.sp,o.lv);Object.assign(m,o);const st=calcStats(m);m.maxHp=st.hp;m.hp=st.hp;m.actCd=0;m.mvIdx=0;m.mod={};m.status=null;return m;};
+  const loadSave=(txt)=>{
+    try{
+      const sv=JSON.parse(txt);if(!sv.team)throw 0;
+      const gs2=g.current;
+      Object.assign(gs2,{money:sv.money||0,route:sv.route||0,maxRoute:sv.maxRoute||0,badges:sv.badges||[],items:sv.items||{},tms:sv.tms||[],diff:sv.diff||0,medals:Object.assign({atk:0,def:0,gold:0,xp:0,spd:0,egg:0},sv.medals||{}),life:Object.assign({kills:0,eggs:0,shinies:0,evos:0,steals:0,money:0,maxLv:5,pension:0},sv.life||{}),ach:sv.ach||{},vol:sv.vol??0.5,diffMax:sv.diffMax||sv.diff||0,mbUsed:sv.mbUsed||{},dex:sv.dex||{},kills:sv.kills||0,eggs:sv.eggs||0,shinies:sv.shinies||0,heldInv:sv.heldInv||[]});
+      gs2.team=(sv.team||[]).map(reviveMon);gs2.box=(sv.box||[]).map(reviveMon);
+      gs2.enemies=[];gs2.trainerFight=false;gs2.wave=0;gs2.trIdx=0;gs2.gymIdx=0;
+      // PROGRESSION HORS-LIGNE (farm des vagues uniquement, cap 8h, pas sur Route 1)
+      if(sv.ts&&gs2.team.length&&gs2.route>0){
+        const away=Math.min(8*3600,(Date.now()-sv.ts)/1000);
+        if(away>60){
+          const r=ROUTES[gs2.route];
+          if(!r.tr.gym&&!r.solo){
+            const avgLv=scaleLv((r.lv[0]+r.lv[1])/2,gs2.diff);
+            const killsOff=Math.floor(away/9); // ~1 kill / 9s hors-ligne
+            const xpOff=Math.floor(killsOff*avgLv*1.1*0.6); // rendement offline 60%
+            const cashOff=Math.floor(killsOff*avgLv*0.5*0.6);
+            gs2.money+=cashOff;gs2.kills+=killsOff;
+            gs2.team.forEach(m=>{
+              m.xp+=Math.floor(xpOff*(m.item==="luckyegg"?2:1)*(gs2.items.expshare?1.5:1));
+              while(m.xp>=xpFor(m.lv+1)&&m.lv<100){m.lv++;
+                LEARN[m.sp].filter(([l])=>l===m.lv).forEach(([,mvN])=>{if(!m.moves.includes(mvN)&&m.moves.length<4)m.moves.push(mvN);});
+                const d=DEX[m.sp];
+                if(d.evoLv>0&&m.lv>=d.evoLv&&d.evoTo&&DEX[d.evoTo]){m.sp=d.evoTo;gs2.dex[m.sp]=gs2.dex[m.sp]||{seen:0,caught:0};gs2.dex[m.sp].seen++;gs2.dex[m.sp].caught++;}
+              }
+              const st=calcStats(m);m.maxHp=st.hp;m.hp=st.hp;
+            });
+            gs2.log.unshift(`🌙 Pendant ton absence (${Math.floor(away/60)} min) : ${killsOff} Pokémon vaincus, +${cashOff}₽ !`);
+          }
+        }
+      }
+      rr();return true;
+    }catch(e){return false;}
+  };
+  useEffect(()=>{
+    try{const sv=localStorage.getItem("taskbar-pokemon-save");if(sv)loadSave(sv);}catch(e){}
+    const iv=setInterval(()=>{try{localStorage.setItem("taskbar-pokemon-save",serialize());}catch(e){}},10000);
+    const onHide=()=>{try{localStorage.setItem("taskbar-pokemon-save",serialize());}catch(e){}};
+    window.addEventListener("visibilitychange",onHide);window.addEventListener("pagehide",onHide);
+    return()=>{clearInterval(iv);window.removeEventListener("visibilitychange",onHide);window.removeEventListener("pagehide",onHide);};
+  },[]);
+  const importSave=()=>{
+    const txt=prompt("Colle ici le contenu de ta sauvegarde (.txt) :");
+    if(txt&&loadSave(txt)){try{localStorage.setItem("taskbar-pokemon-save",txt);}catch(e){}alert("Sauvegarde chargée !");}
+    else if(txt)alert("Sauvegarde invalide.");
+  };
+  const exportSave=()=>{
+    const blob=new Blob([serialize()],{type:"text/plain"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="taskbar-pokemon-save.txt";a.click();
+  };
+  const equipHeld=(uid,hid)=>{
+    const m=[...gs.team,...gs.box].find(x=>x.uid===uid);if(!m)return;
+    const idx=gs.heldInv.indexOf(hid);if(idx===-1)return;
+    gs.heldInv.splice(idx,1);
+    if(m.item)gs.heldInv.push(m.item);
+    m.item=hid;rr();
+  };
+  const unequipHeld=(uid)=>{
+    const m=[...gs.team,...gs.box].find(x=>x.uid===uid);if(!m||!m.item)return;
+    gs.heldInv.push(m.item);m.item=null;rr();
+  };
+  const setMove=(uid,slot,mvName)=>{
+    const m=[...gs.team,...gs.box].find(x=>x.uid===uid);if(!m)return;
+    if(m.moves.includes(mvName))return;
+    if(slot>=m.moves.length){m.moves.push(mvName);}
+    else{m.moves[slot]=mvName;}
+    m.mvIdx=0;
+    setMvSlot(null);rr();
+  };
+  const chooseStarter=(sp)=>{
+    if(gs.team.length>0)return;
+    const st=mkMon(sp,5);
+    gs.team.push(st);
+    gs.dex[sp]={seen:1,caught:1};
+    gs.log.unshift(`⭐ ${DEX[sp].name} est ton starter ! L'aventure commence.`);
+    spawnWave(gs);rr();
+  };
+  const buyMedal=(id)=>{
+    const d=MEDALS.find(x=>x.id===id);const lv=gs.medals[id];
+    if(lv>=d.max)return;const c=medCost(d,lv);
+    if(gs.money<c)return;gs.money-=c;gs.medals[id]++;rr();
+  };
+  const setPension=(slot,uid)=>{
+    if(uid&&(gs.pension.a===uid||gs.pension.b===uid))return;
+    gs.pension[slot]=uid;gs.pension.prog=0;rr();
+  };
+  const pensionOK=(()=>{
+    const pa=[...gs.team,...gs.box].find(x=>x.uid===gs.pension.a);
+    const pb=[...gs.team,...gs.box].find(x=>x.uid===gs.pension.b);
+    if(!pa||!pb)return{ok:false,why:"Place deux Pokémon."};
+    if(pa.uid===pb.uid)return{ok:false,why:"Deux Pokémon différents requis."};
+    const fam=x=>baseEvo(x.sp);
+    const hasDitto=pa.sp===132||pb.sp===132;
+    if(pa.sp===132&&pb.sp===132)return{ok:false,why:"Deux Métamorph ne peuvent pas se reproduire !"};
+    if(!hasDitto){
+      if(fam(pa)!==fam(pb))return{ok:false,why:"Même famille requise (ou Métamorph)."};
+      if(!pa.gender||!pb.gender)return{ok:false,why:"Les Pokémon asexués n'acceptent que Métamorph."};
+      if(pa.gender===pb.gender)return{ok:false,why:"Genres opposés requis (♂ + ♀), ou utilise Métamorph."};
+    }
+    return{ok:true,why:""};
+  })();
+  const dexCaught=Object.values(gs.dex).filter(d=>d.caught>0).length;
+  const dexSeen=Object.keys(gs.dex).length;
+
+  // ── UI ──────────────────────────────────────────────────────────────────
+  const IVBar=({v})=>(<div style={{flex:1,background:"#222",height:5,borderRadius:2}}><div style={{width:`${(v/31)*100}%`,height:"100%",borderRadius:2,background:v>25?"#4caf50":v>15?"#ffd166":"#e63946"}}/></div>);
+  const MonRow=({m,inTeam})=>{
+    const d=DEX[m.sp];const s=calcStats(m);
+    return(
+    <div style={{background:"#16162e",border:`1px solid ${m.shiny?"gold":"#2a2a4a"}`,borderRadius:6,padding:6,marginBottom:5,cursor:"pointer"}} onClick={()=>{setSelMon(m.uid);setMvSlot(null);}}>
+      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+        <span onClick={e=>{e.stopPropagation();gs.dex[m.sp]=gs.dex[m.sp]||{seen:1,caught:1};setDexSel(m.sp);}} style={{cursor:"pointer"}}><Sprite sp={m.sp} shiny={m.shiny} size={40}/></span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:8}}>
+            <span style={{color:m.shiny?"gold":"#fff",textDecoration:"underline",cursor:"pointer"}} onClick={e=>{e.stopPropagation();gs.dex[m.sp]=gs.dex[m.sp]||{seen:1,caught:1};setDexSel(m.sp);}}>{m.shiny?"✨":""}{d.name}</span>
+            <span style={{color:"#888"}}> N.{m.lv}</span>{m.gender&&<span style={{color:m.gender==="♂"?"#6890F0":"#F85888",fontSize:7}}> {m.gender}</span>}
+          </div>
+          <div style={{fontSize:6,color:TC[d.t1]}}>{TYPE_FR[d.t1]}{d.t2?"/"+TYPE_FR[d.t2]:""} · <span style={{color:"#9c88ff"}}>{m.abi}</span> · {m.nature}</div>
+          <div style={{fontSize:6,color:"#666"}}>PV {m.hp}/{m.maxHp} · ATK {s.atk} · DEF {s.def} · SpA {s.spa} · VIT {s.spe} ⚡{(1000/Math.max(900,3600-s.spe*13)).toFixed(2)}/s</div>
+        </div>
+        {inTeam
+          ?<div style={{display:"flex",flexDirection:"column",gap:2}}>
+            <div style={{display:"flex",gap:2}}>
+              <button className="bt" style={{padding:"2px 4px"}} onClick={e=>{e.stopPropagation();const i=gs.team.findIndex(x=>x.uid===m.uid);if(i>0){[gs.team[i-1],gs.team[i]]=[gs.team[i],gs.team[i-1]];restartRoute();rr();}}}>▲</button>
+              <button className="bt" style={{padding:"2px 4px"}} onClick={e=>{e.stopPropagation();const i=gs.team.findIndex(x=>x.uid===m.uid);if(i<gs.team.length-1){[gs.team[i+1],gs.team[i]]=[gs.team[i],gs.team[i+1]];restartRoute();rr();}}}>▼</button>
+            </div>
+            <button className="bt" onClick={e=>{e.stopPropagation();toBox(m.uid);}}>PC→</button>
+          </div>
+          :<div style={{display:"flex",flexDirection:"column",gap:2}}>
+            <button className="bt" onClick={e=>{e.stopPropagation();swapMon(m.uid);}}>Équipe</button>
+            <button className="bt btr" onClick={e=>{e.stopPropagation();setConfirmRel(m.uid);}}>Relâcher</button>
+          </div>}
+      </div>
+      <div style={{display:"flex",gap:3,marginTop:4,alignItems:"center"}}>
+        <span style={{fontSize:5,color:"#888",width:14}}>IV</span>
+        {["hp","atk","def","spa","spd","spe"].map(k=><IVBar key={k} v={m.iv[k]}/>)}
+        <span style={{fontSize:5,color:"#888"}}>{Object.values(m.iv).reduce((a,b)=>a+b,0)}/186</span>
+      </div>
+    </div>);
+  };
+
+  return(
+  <div style={{fontFamily:"'Press Start 2P',monospace",background:"#0d0d1a",minHeight:"100vh",color:"#e0e0e0",display:"flex",flexDirection:"column",fontSize:10,maxWidth:640,margin:"0 auto",width:"100%",boxShadow:"0 0 40px #000"}}>
+    <style>{`@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+      *{box-sizing:border-box;margin:0;padding:0}
+      ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#e63946;border-radius:2px}
+      @keyframes fup{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-46px)}}
+      .fl{position:absolute;pointer-events:none;white-space:nowrap;animation:fup 1s ease-out forwards;font-size:8px;text-shadow:0 0 6px currentColor;z-index:9}
+      .bt{font-family:inherit;font-size:6px;cursor:pointer;background:#0a1a3a;border:1px solid #4a90d9;color:#4a90d9;border-radius:3px;padding:3px 6px}
+      .bt:active{transform:scale(.94)}
+      .btr{background:#2a0a0a;border-color:#e63946;color:#e63946}
+      .btg{background:#7a5200;border-color:#ffd166;color:#ffd166}
+      .btoff{opacity:.3;cursor:not-allowed}
+      @media (max-width:520px){
+        .fl{font-size:7px}
+      }
+      @media (min-width:900px){
+        body{display:flex;justify-content:center}
+      }
+      .tb{font-family:inherit;font-size:7px;min-width:19%;cursor:pointer;border:none;border-top:2px solid transparent;padding:8px 0;background:#12122a;color:#777;flex:1}
+      .tb.on{color:#fff;border-top-color:#e63946;background:#1a1a34}
+      @keyframes walk{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}\n      .walker{animation:walk .55s ease-in-out infinite}\n      @keyframes slidein{0%{transform:translateX(90px);opacity:0}100%{transform:translateX(0);opacity:1}}\n      .slide-in{animation:slidein .5s ease-out}\n      @keyframes burst{0%{transform:scale(.4);opacity:1}80%{transform:scale(1.5);opacity:.9}100%{transform:scale(1.9);opacity:0}}\n      .flbig{font-size:22px!important;animation:burst .6s ease-out forwards!important}\n      @keyframes evoflash{0%{opacity:0}30%{opacity:1}100%{opacity:0}}\n      .evo-flash{animation:evoflash 2s ease-in-out infinite}\n      @keyframes evoshake{0%,100%{transform:scale(1)}25%{transform:scale(1.08)}75%{transform:scale(0.94)}}\n      .evo-shake{animation:evoshake .5s ease-in-out infinite}\n      @keyframes evostar{0%{opacity:1;transform:rotate(var(--r)) translateY(0)}100%{opacity:0;transform:rotate(var(--r)) translateY(-70px)}}\n      .evo-star{color:#ffd166;font-size:14px;animation:evostar 1.4s ease-out infinite}\n      @keyframes bgscroll{0%{background-position-x:0}100%{background-position-x:-480px}}\n      @keyframes gympulse{0%,100%{box-shadow:0 0 8px #ffd16644}50%{box-shadow:0 0 20px #ffd166}}
+    `}</style>
+
+    {/* HEADER */}
+    <div style={{background:"#14081c",borderBottom:"2px solid #e63946",padding:"6px 10px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
+      <div style={{color:"#e63946",fontSize:9}}>◉ TASKBAR POKÉMON <span onClick={()=>setDiffSel(true)} style={{color:DIFFS[gs.diff].col,fontSize:7,cursor:"pointer",textDecoration:"underline"}}>· {DIFFS[gs.diff].name} ▾</span></div>
+      <div style={{display:"flex",gap:10,fontSize:7}}>
+        <span style={{color:"#ffd166"}}>💰{gs.money.toLocaleString()}₽</span>
+        <span style={{color:"#9c88ff"}}>🎖️{gs.badges.length}</span>
+        <span style={{color:"#4caf50"}}>📕{dexCaught}/151</span>
+      </div>
+    </div>
+
+    {/* ══ ZONE COMBAT — marche vers la droite, ordre = Vitesse ══ */}
+    <div style={{background:"#0d1522",padding:"8px 8px 4px",position:"relative",minHeight:200,overflow:"hidden"}}>
+      <ZoneBG kind={zoneKind(r.name)} paused={gs.trainerFight||r.tr.gym}/>
+      <div style={{position:"relative",zIndex:2}}>
+        <div style={{textAlign:"center",fontSize:7,color:"#fff",textShadow:"0 1px 3px #000",marginBottom:4}}>
+          {r.name} · {gs.trainerFight?<span style={{color:"#ffd166"}}>⚔️ {curTrainer(gs).name} ({gs.trIdx+1}/{curTrainer(gs).team.length})</span>:`Vague ${gs.wave+1}/${WAVES}`}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",maxWidth:560,margin:"0 auto",position:"relative",height:118}}>
+          {/* HÉROS — ordre de FORMATION (le 1er/tank est au contact, à droite) */}
+          <div style={{display:"flex",alignItems:"flex-end",gap:6,position:"relative"}}>
+            {gs.floats.filter(f=>f.side==="team"&&!f.big).slice(-3).map((f,i)=><span key={f.id} className="fl" style={{color:f.c,left:16,top:-4-i*11}}>{f.text}</span>)}
+            {gs.floats.filter(f=>f.side==="team"&&f.big).slice(-1).map(f=><span key={f.id} className="fl flbig" style={{left:"45%",top:8}}>{f.text}</span>)}
+            {[...gs.team].reverse().map((m)=>{
+              const chg=m.actMax?Math.max(0,Math.min(1,1-(m.actCd/m.actMax))):0;
+              return(
+              <div key={m.uid} className={m.hp>0?"walker":""} onClick={()=>{setSelMon(m.uid);setMvSlot(null);}} style={{textAlign:"center",opacity:m.hp>0?1:.25,cursor:"pointer",width:60}}>
+                <div style={{fontSize:5,color:"#ffd166",background:"#000a",borderRadius:2,padding:"0px 2px",margin:"0 auto 1px",width:"fit-content"}}>
+                  N.{m.lv}{m.status&&<span style={{marginLeft:2,background:STATUS_BADGE[m.status][1],color:"#fff",borderRadius:2,padding:"0 2px"}}>{STATUS_BADGE[m.status][0]}</span>}
+                </div>
+                <Sprite sp={m.sp} shiny={m.shiny} back size={52}/>
+                <div style={{width:52,background:"#000a",height:4,borderRadius:2,margin:"1px auto"}}>
+                  <div style={{width:`${(m.hp/m.maxHp)*100}%`,height:"100%",borderRadius:2,background:m.hp/m.maxHp>.5?"#4caf50":m.hp/m.maxHp>.2?"#ffd166":"#e63946",transition:"width .2s"}}/>
+                </div>
+                <div style={{width:52,background:"#000a",height:2.5,borderRadius:2,margin:"1px auto"}} title="Charge de l'attaque">
+                  <div style={{width:`${chg*100}%`,height:"100%",borderRadius:2,background:"#ffd166"}}/>
+                </div>
+                <div style={{fontSize:5,color:"#fff",background:"#000a",borderRadius:2,padding:"1px 2px",margin:"1px auto 0",width:"fit-content",maxWidth:60}}>{DEX[m.sp].name}</div>
+              </div>);})}
+          </div>
+          {/* ENNEMIS — la horde arrive de la droite */}
+          <div style={{display:"flex",alignItems:"flex-end",gap:4,position:"relative"}}>
+            {gs.floats.filter(f=>f.side==="enemy"&&!f.big).slice(-4).map((f,i)=><span key={f.id} className="fl" style={{color:f.c,right:6,top:-12-i*11}}>{f.text}</span>)}
+            {gs.floats.filter(f=>f.side==="enemy"&&f.big).slice(-1).map(f=><span key={f.id} className="fl flbig" style={{right:"30%",top:6}}>{f.text}</span>)}
+            {gs.trainerFight&&<div style={{position:"absolute",right:-4,top:-48}}><TrainerSprite sp={curTrainer(gs).sp} size={40}/></div>}
+            {gs.enemies.map((e2)=>{
+              const chg=e2.actMax?Math.max(0,Math.min(1,1-(e2.atkCd/e2.actMax))):0;
+              const hpR=e2.hp/e2.maxHp;
+              return e2.hp>0&&(
+              <div key={e2.uid} className="slide-in" style={{textAlign:"center",width:60}}>
+                <div style={{fontSize:5,color:"#ff9060",background:"#000a",borderRadius:2,padding:"0px 2px",margin:"0 auto 1px",width:"fit-content"}}>
+                  N.{e2.lv}{e2.item?" 🎁":""}{e2.status&&<span style={{marginLeft:2,background:STATUS_BADGE[e2.status][1],color:"#fff",borderRadius:2,padding:"0 2px"}}>{STATUS_BADGE[e2.status][0]}</span>}
+                </div>
+                <Sprite sp={e2.sp} shiny={e2.shiny} size={gs.trainerFight&&(r.tr.gym||r.solo)?70:54}/>
+                <div style={{width:52,background:"#000a",height:4,borderRadius:2,margin:"1px auto"}}>
+                  <div style={{width:`${hpR*100}%`,height:"100%",borderRadius:2,background:hpR>.5?"#4caf50":hpR>.2?"#ffd166":"#e63946",transition:"width .15s"}}/>
+                </div>
+                <div style={{width:52,background:"#000a",height:2.5,borderRadius:2,margin:"1px auto"}}>
+                  <div style={{width:`${chg*100}%`,height:"100%",borderRadius:2,background:"#ff9060"}}/>
+                </div>
+                <div style={{fontSize:5,color:e2.shiny?"gold":"#fff",background:"#000a",borderRadius:2,padding:"1px 2px",margin:"1px auto 0",width:"fit-content",maxWidth:60}}>{e2.shiny?"✨":""}{DEX[e2.sp].name}</div>
+              </div>);})}
+          </div>
+        </div>
+        {/* Barre de progression de la route */}
+        <div style={{maxWidth:560,margin:"4px auto 2px",display:"flex",gap:2}}>
+          {r.tr.gym
+            ?cityTrainers(r).map((t,i)=><div key={i} style={{flex:1,height:4,borderRadius:2,background:i<gs.gymIdx?"#4caf50":i===gs.gymIdx?"#ffd166":"#ffffff33"}}/>)
+            :<>{Array.from({length:WAVES}).map((_,i)=><div key={i} style={{flex:1,height:4,borderRadius:2,background:i<gs.wave||gs.trainerFight?"#4caf50":"#ffffff33"}}/>)}
+          <div style={{width:14,height:4,borderRadius:2,background:gs.trainerFight?"#ffd166":"#ffffff33"}}/></>}
+        </div>
+        <div onClick={()=>setJFull(true)} style={{maxWidth:560,margin:"3px auto 0",background:"#000000aa",border:"1px solid #ffffff22",borderRadius:4,padding:"3px 6px",cursor:"pointer"}} title="Agrandir le journal">
+          <div style={{fontSize:6,color:"#ffd166",lineHeight:"11px",marginBottom:1}}>{gs.log[0]}</div>
+          <div style={{fontSize:5.5,color:"#bcd",height:34,overflowY:"auto",lineHeight:"10px"}}>
+            {(gs.blog||[]).slice(0,12).map(e=><div key={e.id}>{e.t}</div>)}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* ══ TABS (bas, style tairidle) ══ */}
+    <div style={{display:"flex",flexWrap:"wrap",borderTop:"1px solid #2a2a4a",borderBottom:"1px solid #2a2a4a"}}>
+      {[["map","🌍"],["team","BALL"],["box","💻"],["bag","🎒"],["mart","🛒"],["dojo","🏅"],["pens","🏠"],["ach","🏆"],["dex","📟"],["menu","⚙️"]].map(([t,l])=>(
+        <button key={t} className={`tb${tab===t?" on":""}`} onClick={()=>setTab(t)}>{l==="BALL"?<Pokeball size={13}/>:l}</button>))}
+    </div>
+
+    <div style={{flex:1,overflowY:"auto",padding:8,maxWidth:560,margin:"0 auto",width:"100%"}}>
+      {tab==="map"&&ROUTES.map((rt,i)=>{
+        const locked=i>gs.maxRoute;const cur=i===gs.route;
+        return(<div key={i} onClick={()=>goRoute(i)} style={{display:"flex",gap:8,alignItems:"center",background:cur?"#1e2a1e":"#16162e",border:`1px solid ${cur?"#4caf50":locked?"#222":rt.tr.gym?"#ffd16655":"#2a2a4a"}`,borderRadius:6,padding:"6px 8px",marginBottom:4,opacity:locked?.35:1,cursor:locked?"default":"pointer",animation:cur&&rt.tr.gym?"gympulse 2s infinite":"none"}}>
+          <span style={{fontSize:9}}>{locked?"🔒":rt.tr.final?"⚡":rt.tr.gym?"🏛️":"🌿"}</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:7,color:cur?"#4caf50":"#ddd"}}>{rt.name}</div>
+            <div style={{fontSize:5,color:"#777"}}>Niv.~{scaleLv(rt.lv[0],gs.diff)}-{scaleLv(rt.lv[1],gs.diff)} · Boss: {rt.tr.name}{rt.tr.badge?` · 🎖️${rt.tr.badge}`:""}</div>
+          </div>
+          {cur&&<span style={{fontSize:6,color:"#4caf50"}}>▶</span>}
+        </div>);
+      })}
+
+      {tab==="team"&&<>
+        <div style={{fontSize:6,color:"#888",marginBottom:6}}>Formation {gs.team.length}/3 — le 1er (🛡️ TANK) encaisse les coups directs. Les attaques de ZONE touchent tout le monde. ▲▼ pour réordonner.</div>
+        {gs.team.map((m,i)=>(<div key={m.uid}>
+          <div style={{fontSize:6,color:i===0?"#6890F0":i===1?"#F08030":"#78C850",marginBottom:2}}>{i===0?"🛡️ Position 1 — Tank":i===1?"⚔️ Position 2":"💚 Position 3 — Arrière"}</div>
+          <MonRow m={m} inTeam/>
+        </div>))}
+        <div style={{fontSize:6,color:"#666",marginTop:8}}>Attaques de l'équipe :</div>
+        {gs.team.map(m=>(<div key={m.uid} style={{fontSize:6,color:"#aaa",marginTop:3}}>
+          {DEX[m.sp].name}: {m.moves.map(mv=><span key={mv} style={{color:TC[MV[mv]?.[1]],marginRight:6}}>{frn(mv)}</span>)}
+        </div>))}
+      </>}
+
+      {tab==="box"&&<>
+        <div style={{fontSize:6,color:"#888",marginBottom:4}}>PC — {gs.box.length} Pokémon</div>
+        <div style={{display:"flex",gap:3,marginBottom:6}}>
+          {[["lv","Niveau"],["dex","N° Dex"],["iv","IV"]].map(([k,l])=>(
+            <button key={k} className="bt" style={boxSort===k?{background:"#1a3a1a",borderColor:"#4caf50",color:"#4caf50"}:{}} onClick={()=>setBoxSort(k)}>{l}</button>))}
+          <button className="bt" style={boxShiny?{background:"#3a2e00",borderColor:"gold",color:"gold"}:{}} onClick={()=>setBoxShiny(v=>!v)}>✨ Shiny</button>
+        </div>
+        {gs.box.length===0&&<div style={{fontSize:7,color:"#555",textAlign:"center",padding:20}}>Vide. Bats des dresseurs pour obtenir des œufs !</div>}
+        {[...gs.box].filter(m=>!boxShiny||m.shiny).sort((a,b)=>boxSort==="lv"?b.lv-a.lv:boxSort==="dex"?a.sp-b.sp:Object.values(b.iv).reduce((x,y)=>x+y,0)-Object.values(a.iv).reduce((x,y)=>x+y,0)).map(m=><MonRow key={m.uid} m={m}/>)}
+        {boxShiny&&![...gs.box].some(m=>m.shiny)&&<div style={{fontSize:6,color:"#888",textAlign:"center",padding:12}}>Aucun shiny dans le PC pour l'instant. ✨ 1/4096 (6/4096 via les œufs) !</div>}
+      </>}
+
+      {tab==="bag"&&<>
+        <div style={{fontSize:6,color:"#888",marginBottom:6}}>🎒 Ton sac — objets obtenus en aventure</div>
+        <div style={{fontSize:7,color:"#ffd166",marginBottom:4}}>Objets tenus ({gs.heldInv.length})</div>
+        {gs.heldInv.length===0&&<div style={{fontSize:6,color:"#555",marginBottom:8}}>Aucun. Achète-les au Pokémart 🏪, puis équipe-les via la fiche d'un Pokémon.</div>}
+        {gs.heldInv.map((hid,i)=>(<div key={i} style={{background:"#16162e",border:"1px solid #2a2a4a",borderRadius:5,padding:6,marginBottom:3}}>
+          <div style={{fontSize:7,color:"#9c88ff"}}>{HELD[hid].name}</div><div style={{fontSize:5,color:"#888"}}>{HELD[hid].desc}</div>
+        </div>))}
+        <div style={{fontSize:7,color:"#ffd166",margin:"8px 0 4px"}}>💿 CT obtenues ({gs.tms.length})</div>
+        {gs.tms.length===0&&<div style={{fontSize:6,color:"#555"}}>Bats les champions d'arène pour gagner des CT !</div>}
+        {gs.tms.map(t=>(<div key={t} style={{background:"#16162e",border:`1px solid ${TC[MV[t][1]]}66`,borderRadius:5,padding:6,marginBottom:3,display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}
+          onClick={()=>{
+            const ty=MV[t][1];
+            const learners=[...gs.team,...gs.box].filter(m=>{const d=DEX[m.sp];return ty===d.t1||ty===d.t2||ty==="Normal";});
+            setInfo({title:`CT — ${frn(t)}`,type:ty,body:mvDesc(t),
+              extra:learners.length?`Peuvent l'apprendre : ${learners.map(m=>DEX[m.sp].name+(gs.team.some(x=>x.uid===m.uid)?" (équipe)":"")).join(", ")}`:"Aucun de tes Pokémon ne peut l'apprendre (type incompatible)."});
+          }}>
+          <TypeIcon t={MV[t][1]} size={13}/>
+          <span style={{fontSize:7,color:"#fff",textDecoration:"underline"}}>{frn(t)}</span>
+          <span style={{fontSize:5,color:"#888"}}>Puis.{MV[t][0]} · qui peut l'apprendre ?</span>
+        </div>))}
+        <div style={{fontSize:7,color:"#ffd166",margin:"8px 0 4px"}}>🔑 Objets clés</div>
+        {Object.keys(gs.items).length===0&&<div style={{fontSize:6,color:"#555"}}>Rien pour l'instant — visite le Pokémart 🏪</div>}
+        {Object.keys(gs.items).map(id=>{const it=ITEMS_SHOP.find(x=>x.id===id);return it&&(
+          <div key={id} style={{background:"#16162e",border:"1px solid #4caf50",borderRadius:5,padding:6,marginBottom:3}}>
+            <div style={{fontSize:7,color:"#4caf50"}}>✓ {it.name}</div><div style={{fontSize:5,color:"#888"}}>{it.desc}</div>
+          </div>);})}
+      </>}
+
+      {tab==="mart"&&<>
+        <div style={{fontSize:6,color:"#888",marginBottom:6}}>🏪 Pokémart — objets clés permanents</div>
+        {ITEMS_SHOP.filter(i=>i.cost>0).map(it=>{
+          const owned=gs.items[it.id];
+          const locked=(it.id==="shinycharm"&&gs.diffMax<1&&!owned)||(it.id==="masterball"&&(gs.diffMax<1||gs.mbUsed[gs.diff]));
+          const can=!locked&&gs.money>=it.cost;
+          return(<div key={it.id} style={{background:"#16162e",border:`1px solid ${owned?"#4caf50":locked?"#333":"#2a2a4a"}`,borderRadius:6,padding:8,marginBottom:5,display:"flex",alignItems:"center",gap:8,opacity:locked?.55:1}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:7,color:owned?"#4caf50":"#fff"}}>{owned?"✓ ":""}{locked?"🔒 ":""}{it.name}</div>
+              <div style={{fontSize:5,color:"#888"}}>{it.desc}{locked?(it.id==="masterball"&&gs.mbUsed[gs.diff]?" — Déjà utilisée dans cet acte":" — Termine l'Acte I en Normal pour débloquer"):""}</div>
+            </div>
+            {!owned&&<button className={`bt btg${can?"":" btoff"}`} onClick={()=>!locked&&buyItem(it)}>{it.cost.toLocaleString()}₽</button>}
+          </div>);})}
+        <div style={{fontSize:7,color:"#ffd166",margin:"10px 0 4px"}}>Objets à tenir (équipables via la fiche d'un Pokémon)</div>
+        {Object.keys(HELD).map(hid=>{
+          const price=HELD_PRICES[hid]||3000;const can=gs.money>=price;
+          const owned=gs.heldInv.filter(x=>x===hid).length+[...gs.team,...gs.box].filter(m=>m.item===hid).length;
+          return(<div key={hid} style={{background:"#16162e",border:"1px solid #2a2a4a",borderRadius:6,padding:8,marginBottom:5,display:"flex",alignItems:"center",gap:8}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:7,color:"#9c88ff"}}>{HELD[hid].name}{owned>0&&<span style={{color:"#4caf50"}}> ×{owned}</span>}</div>
+              <div style={{fontSize:5,color:"#888"}}>{HELD[hid].desc}</div>
+            </div>
+            <button className={`bt btg${can?"":" btoff"}`} onClick={()=>{if(gs.money<price)return;gs.money-=price;gs.heldInv.push(hid);gs.log.unshift(`🛍️ ${HELD[hid].name} acheté !`);rr();}}>{price.toLocaleString()}₽</button>
+          </div>);})}
+      </>}
+
+      {tab==="dojo"&&<>
+        <div style={{fontSize:6,color:"#888",marginBottom:6}}>🏅 Médailles d'Effort — bonus permanents (conservés entre difficultés)</div>
+        {MEDALS.map(d=>{
+          const lv=gs.medals[d.id];const maxed=lv>=d.max;const c=medCost(d,lv);const can=!maxed&&gs.money>=c;
+          return(<div key={d.id} style={{background:"#16162e",border:`1px solid ${maxed?"#ffd166":"#2a2a4a"}`,borderRadius:6,padding:8,marginBottom:5}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:7,color:maxed?"#ffd166":"#fff"}}>{d.name} <span style={{color:"#4a90d9"}}>Niv.{lv}/{d.max}</span></div>
+                <div style={{fontSize:5,color:"#888"}}>{d.desc} · actuel : {d.id==="atk"?`+${lv*2}%`:d.id==="def"?`−${(lv*1.5).toFixed(1)}%`:d.id==="gold"||d.id==="xp"?`+${lv*3}%`:d.id==="spd"?`+${lv}%`:`+${lv*4}%`}</div>
+              </div>
+              {!maxed&&<button className={`bt btg${can?"":" btoff"}`} onClick={()=>buyMedal(d.id)}>{c.toLocaleString()}₽</button>}
+              {maxed&&<span style={{fontSize:6,color:"#ffd166"}}>MAX</span>}
+            </div>
+            <div style={{background:"#222",height:4,borderRadius:2,marginTop:5}}><div style={{width:`${(lv/d.max)*100}%`,height:"100%",borderRadius:2,background:maxed?"#ffd166":"#4a90d9"}}/></div>
+          </div>);})}
+
+      </>}
+
+      {tab==="pens"&&<>
+        <div style={{fontSize:6,color:"#888",marginBottom:6}}>🏠 Pension Pokémon — même famille avec genres opposés ♂♀, ou Métamorph avec n'importe qui. L'œuf progresse à chaque victoire sauvage et hérite des 3 meilleures IV des parents.</div>
+        <div style={{display:"flex",gap:6,marginBottom:6}}>
+          {["a","b"].map(slot=>{
+            const p=[...gs.team,...gs.box].find(x=>x.uid===gs.pension[slot]);
+            return(<div key={slot} style={{flex:1,background:"#16162e",border:`1px dashed ${p?"#4caf50":"#444"}`,borderRadius:6,padding:8,textAlign:"center",minHeight:78}}>
+              <div style={{fontSize:5,color:"#888",marginBottom:3}}>Parent {slot.toUpperCase()}</div>
+              {p?(<>
+                <Sprite sp={p.sp} shiny={p.shiny} size={40}/>
+                <div style={{fontSize:6,color:"#fff"}}>{p.shiny?"✨":""}{DEX[p.sp].name} N.{p.lv} <span style={{color:p.gender==="♂"?"#6890F0":p.gender==="♀"?"#F85888":"#888"}}>{p.gender||"—"}</span></div>
+                <div style={{fontSize:5,color:"#4a90d9"}}>IV {Object.values(p.iv).reduce((a,b)=>a+b,0)}/186</div>
+                <button className="bt btr" style={{marginTop:3}} onClick={()=>setPension(slot,null)}>Retirer</button>
+              </>):(
+                <button className="bt" style={{marginTop:16}} onClick={()=>setPensionPick(slot)}>{pensionPick===slot?"Choisis en bas ↓":"Choisir..."}</button>
+              )}
+            </div>);})}
+        </div>
+        {!pensionOK.ok&&(gs.pension.a||gs.pension.b)&&<div style={{fontSize:6,color:"#e67946",marginBottom:5}}>⚠️ {pensionOK.why}</div>}
+        {pensionOK.ok&&<div style={{marginBottom:5}}>
+          <div style={{fontSize:6,color:"#4caf50",marginBottom:2}}>🥚 Œuf en cours : {gs.pension.prog}/{gs.pension.need} victoires sauvages</div>
+          <div style={{background:"#222",height:6,borderRadius:3}}><div style={{width:`${(gs.pension.prog/gs.pension.need)*100}%`,height:"100%",borderRadius:3,background:"linear-gradient(90deg,#ffd166,#ffef9a)"}}/></div>
+        </div>}
+        {pensionPick&&<div style={{fontSize:6,color:"#4caf50",marginBottom:4}}>👇 Touche un Pokémon pour voir sa fiche complète (IV, nature...) et confirmer son placement en Parent {pensionPick.toUpperCase()} :</div>}
+        <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+          {[...gs.team,...gs.box].map(m=>(
+            <button key={m.uid} className="bt" style={{opacity:(gs.pension.a===m.uid||gs.pension.b===m.uid)?.35:1,borderColor:m.gender==="♂"?"#6890F0":m.gender==="♀"?"#F85888":"#4a90d9",color:m.gender==="♂"?"#6890F0":m.gender==="♀"?"#F85888":"#4a90d9"}}
+              onClick={()=>{setSelMon(m.uid);setMvSlot(null);}}>
+              {m.shiny?"✨":""}{DEX[m.sp].name} {m.gender||""} N.{m.lv} · IV {Object.values(m.iv).reduce((a,b)=>a+b,0)}
+            </button>))}
+        </div>
+        <div style={{fontSize:5,color:"#555",marginTop:6}}>Touche un Pokémon → sa fiche s'ouvre avec toutes ses infos → bouton « Mettre en Pension ».</div>
+      </>}
+
+      {tab==="ach"&&(()=>{
+        const unlocked=ACHS.filter(a=>gs.ach[a.id]).length;
+        return(<>
+        <div style={{background:"#1a2e1a",border:"1px solid #4caf50",borderRadius:6,padding:"8px 10px",marginBottom:8}}>
+          <div style={{fontSize:9,color:"#fff"}}>SUCCÈS</div>
+          <div style={{fontSize:6,color:"#8ec89a",marginTop:2}}>{unlocked} / {ACHS.length} débloqués · 🎖️ Badges : {gs.badges.length}</div>
+        </div>
+        <div style={{fontSize:7,color:"#ffd166",marginBottom:5,letterSpacing:1}}>GÉN 1 — KANTO</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+          {ACHS.map(a=>{
+            const ok=!!gs.ach[a.id];
+            return(<div key={a.id} style={{background:ok?"#1c2e1c":"#14141f",border:`2px solid ${ok?"#4caf50":"#2a2a3a"}`,borderRadius:6,padding:"10px 6px",textAlign:"center",opacity:ok?1:.55}}>
+              <div style={{fontSize:20,filter:ok?"none":"grayscale(1) brightness(0.5)"}}>{ok?a.icon:"🔒"}</div>
+              <div style={{fontSize:6.5,color:ok?"#fff":"#777",margin:"5px 0 3px"}}>{a.name}</div>
+              <div style={{fontSize:5,color:ok?"#8ec89a":"#555",lineHeight:"9px"}}>{a.desc}</div>
+            </div>);})}
+        </div>
+      </>);})()}
+
+      {tab==="dex"&&<>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+          <div style={{fontSize:6,color:"#888",flex:1}}>Pokédex : {dexCaught} capturés · {dexSeen} vus / 151</div>
+          <button className="bt" style={dexShiny?{background:"#3a2e00",borderColor:"gold",color:"gold"}:{}} onClick={()=>setDexShiny(v=>!v)}>✨</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(52px,1fr))",gap:4}}>
+          {RAW.filter(rw=>{if(!dexShiny)return true;const id=rw[0];return(gs.dex[id]?.shiny>0)||[...gs.team,...gs.box].some(m=>m.sp===id&&m.shiny);}).map(rw=>{const id=rw[0];const e=gs.dex[id];
+            return(<div key={id} onClick={()=>setDexSel(dexSel===id?null:id)} style={{background:"#16162e",border:`1px solid ${e?.caught?"#4caf50":e?.seen?"#555":"#222"}`,borderRadius:5,padding:3,textAlign:"center",opacity:e?1:.25,cursor:"pointer",position:"relative"}}>
+              {e?.caught>0&&<div style={{position:"absolute",top:2,right:2}}><Pokeball size={9}/></div>}
+              <Sprite sp={id} size={36} style={e?{}:{filter:"brightness(0)"}}/>
+              <div style={{fontSize:5,color:e?.caught?"#4caf50":"#777"}}>#{id}</div>
+            </div>);})}
+        </div>
+
+      </>}
+
+      {tab==="menu"&&<>
+        <div style={{background:"#16162e",border:"1px solid #2a2a4a",borderRadius:6,padding:10,marginBottom:6}}>
+          <div style={{fontSize:8,color:"#ffd166",marginBottom:4}}>🎖️ Badges ({gs.badges.length}/{BADGES_LIST.length})</div>
+          <div style={{fontSize:5,color:"#888"}}>Retrouve tous tes exploits dans l'onglet 🏆 Succès !</div>
+        </div>
+        <div style={{background:"#16162e",border:"1px solid #2a2a4a",borderRadius:6,padding:10,marginBottom:6,fontSize:6,color:"#aaa",lineHeight:"12px"}}>
+          <div style={{fontSize:8,color:"#7ec8e3",marginBottom:4}}>📊 Statistiques</div>
+          Difficulté : <span style={{color:DIFFS[gs.diff].col}}>{DIFFS[gs.diff].name}</span> (pas de cap de niveau)<br/>
+          Paliers : {DIFFS.map(d=>`${d.name} ${d.lo}-${d.hi}`).join(" · ")}<br/>
+          Pokémon vaincus : {gs.kills}<br/>Œufs éclos : {gs.eggs}<br/>Shiny rencontrés : {gs.shinies}<br/>Taux shiny : 1/{gs.items.shinycharm?1365:4096}
+        </div>
+        <button className="bt" style={{width:"100%",padding:8,fontSize:7,marginBottom:5}} onClick={exportSave}>💾 Exporter la sauvegarde (.txt)</button>
+        <button className="bt btg" style={{width:"100%",padding:8,fontSize:7,marginBottom:5}} onClick={importSave}>📥 Importer une sauvegarde</button>
+        <button className="bt btr" style={{width:"100%",padding:8,fontSize:7}} onClick={()=>setConfirmReset(true)}>🔄 Nouvelle partie (changer de starter)</button>
+        <div style={{marginTop:8,background:"#16162e",border:"1px solid #2a2a4a",borderRadius:6,padding:8}}>
+          <div style={{fontSize:7,color:"#7ec8e3",marginBottom:4}}>🔊 Volume des cris ({Math.round((gs.vol??0.5)*100)}%)</div>
+          <input type="range" min="0" max="100" defaultValue={Math.round((gs.vol??0.5)*100)} style={{width:"100%"}} onChange={e=>{gs.vol=e.target.value/100;}}/>
+          <div style={{fontSize:5,color:"#666",marginTop:3}}>Cris officiels joués quand un Pokémon tombe K.O. (musique : pas de source libre de droits fiable, donc pas incluse).</div>
+        </div>
+        <div style={{fontSize:5,color:"#4caf50",marginTop:6,lineHeight:"10px"}}>💾 Sauvegarde automatique toutes les 10s. 🌙 Le farm continue hors-ligne (rendement 60%, max 8h, hors Route 1 / arènes).</div>
+        <div style={{fontSize:5,color:"#555",marginTop:8,lineHeight:"10px"}}>Phase 1 — Kanto (151). À venir : Pension (reproduction IV), Entraînement (EV ciblés, débloqué après le 4e badge), Johto...</div>
+      </>}
+    </div>
+
+    {/* ══ FICHE POKÉDEX (accessible partout) ══ */}
+        {dexSel&&gs.dex[dexSel]&&(()=>{const d=DEX[dexSel];
+          const chain=[];let c=dexSel;let g2=0;while(PREVO[c]&&g2++<5)c=PREVO[c];
+          let cc=c,g3=0;while(cc&&DEX[cc]&&g3++<6){chain.push(cc);cc=DEX[cc].evoTo&&DEX[DEX[cc].evoTo]?DEX[cc].evoTo:null;}
+          const routes=ROUTES.filter(rt=>rt.enc.some(e=>e[0]===dexSel));
+          const eggR=ROUTES.filter(rt=>!rt.tr.gym&&rt.enc.some(e=>e[0]===dexSel));
+          const BSL=[["hp","PV"],["atk","ATK"],["def","DEF"],["spa","SpA"],["spd","SpD"],["spe","VIT"]];
+          return(
+          <div style={{position:"fixed",inset:0,background:"#000c",zIndex:55,display:"flex",alignItems:"center",justifyContent:"center",padding:10}} onClick={()=>setDexSel(null)}>
+            <div style={{background:"#12122a",border:"2px solid #4a90d9",borderRadius:10,padding:12,maxWidth:400,width:"100%",maxHeight:"88vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
+                <Sprite sp={dexSel} size={72}/>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:10,color:"#fff"}}>#{String(dexSel).padStart(3,"0")} {d.name}</div>
+                  <div style={{fontSize:7,marginTop:3}}>
+                    <span style={{background:TC[d.t1],color:"#fff",padding:"1px 5px",borderRadius:3,marginRight:3}}>{TYPE_FR[d.t1]}</span>
+                    {d.t2&&<span style={{background:TC[d.t2],color:"#fff",padding:"1px 5px",borderRadius:3}}>{TYPE_FR[d.t2]}</span>}
+                  </div>
+                  <div style={{fontSize:6,color:"#9c88ff",marginTop:3}}>Talent : <span style={{textDecoration:"underline",cursor:"pointer"}} onClick={()=>setInfo({title:`Talent : ${d.abis[0]}`,body:abiDesc(d.abis[0])})}>{d.abis[0]} ⓘ</span>{d.abis[1]&&<span style={{color:"#555"}}> · {d.abis[1]} 🔒 (talent caché — bientôt)</span>}</div>
+                  <div style={{fontSize:6,color:"#888"}}>Vu ×{gs.dex[dexSel].seen} · Capturé ×{gs.dex[dexSel].caught}</div>
+                </div>
+                <button className="bt btr" onClick={()=>setDexSel(null)}>✕</button>
+              </div>
+              <div style={{fontSize:7,color:"#ffd166",marginBottom:4}}>📊 Stats de base</div>
+              <div style={{display:"grid",gridTemplateColumns:"30px 26px 1fr",gap:3,alignItems:"center",fontSize:6,marginBottom:8}}>
+                {BSL.map(([k,l])=>(<React.Fragment key={k}>
+                  <span style={{color:"#ddd"}}>{l}</span><span style={{color:"#fff"}}>{d.bs[k]}</span>
+                  <div style={{background:"#222",height:5,borderRadius:2}}><div style={{width:`${Math.min(100,(d.bs[k]/160)*100)}%`,height:"100%",borderRadius:2,background:d.bs[k]>=100?"#4caf50":d.bs[k]>=70?"#ffd166":"#e67946"}}/></div>
+                </React.Fragment>))}
+              </div>
+              <div style={{fontSize:7,color:"#ffd166",marginBottom:4}}>🧬 Évolutions</div>
+              <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap",marginBottom:8}}>
+                {chain.map((id2,i)=>(<React.Fragment key={id2}>
+                  {i>0&&<span style={{fontSize:6,color:"#888"}}>→N.{DEX[chain[i-1]].evoLv||"?"}→</span>}
+                  <div onClick={()=>gs.dex[id2]&&setDexSel(id2)} style={{textAlign:"center",opacity:gs.dex[id2]?1:.3,cursor:"pointer",position:"relative"}}>
+                    {gs.dex[id2]?.caught>0&&<div style={{position:"absolute",top:-4,right:-2}}><Pokeball size={10}/></div>}
+                    <Sprite sp={id2} size={40}/><div style={{fontSize:5,color:id2===dexSel?"#4a90d9":"#aaa"}}>{DEX[id2].name}</div>
+                  </div>
+                </React.Fragment>))}
+              </div>
+              <div style={{fontSize:7,color:"#ffd166",marginBottom:4}}>📖 Attaques apprises</div>
+              <div style={{marginBottom:8}}>
+                {LEARN[dexSel].map(([l,mv],i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:5,fontSize:6,padding:"2px 0",borderBottom:"1px solid #1c1c38",cursor:"pointer"}} onClick={()=>setInfo({title:frn(mv),type:MV[mv][1],body:mvDesc(mv)})}>
+                  <span style={{color:"#888",width:26}}>N.{l}</span>
+                  <TypeIcon t={MV[mv][1]} size={13}/>
+                  <span style={{color:"#ddd",flex:1,textDecoration:"underline"}}>{frn(mv)}</span>
+                  <span style={{color:"#666"}}>{MV[mv][0]>0?`Puis.${MV[mv][0]}`:"Statut"}</span>
+                </div>))}
+              </div>
+              <div style={{fontSize:7,color:"#ffd166",marginBottom:4}}>🗺️ Habitat (rencontres sauvages)</div>
+              {routes.length===0&&<div style={{fontSize:6,color:"#555"}}>Introuvable à l'état sauvage (évolution ou œuf uniquement).</div>}
+              {routes.map(rt=>(<div key={rt.name} style={{fontSize:6,color:ROUTES.indexOf(rt)<=gs.maxRoute?"#4caf50":"#666",padding:"1px 0"}}>
+                {ROUTES.indexOf(rt)<=gs.maxRoute?"✓":"🔒"} {rt.name} (Niv.~{scaleLv(rt.lv[0],gs.diff)}-{scaleLv(rt.lv[1],gs.diff)})
+              </div>))}
+              {eggR.length>0&&<div style={{fontSize:5,color:"#888",marginTop:4}}>🥚 Peut éclore des œufs de : {eggR.map(rt=>rt.name).join(", ")}</div>}
+            </div>
+          </div>);})()}
+
+    {/* ══ JOURNAL PLEIN ÉCRAN ══ */}
+    {jFull&&(
+      <div style={{position:"fixed",inset:0,background:"#000d",zIndex:65,display:"flex",alignItems:"center",justifyContent:"center",padding:12}} onClick={()=>setJFull(false)}>
+        <div style={{background:"#12122a",border:"2px solid #4a90d9",borderRadius:10,padding:12,maxWidth:440,width:"100%",maxHeight:"85vh",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+          <div style={{display:"flex",alignItems:"center",marginBottom:8}}>
+            <div style={{fontSize:9,color:"#fff",flex:1}}>📜 Journal de combat</div>
+            <button className="bt btr" onClick={()=>setJFull(false)}>✕</button>
+          </div>
+          <div style={{fontSize:7,color:"#bcd",lineHeight:"14px",overflowY:"auto",flex:1}}>
+            {(gs.blog||[]).map(e=><div key={e.id} style={{borderBottom:"1px solid #1c1c38",padding:"2px 0"}}>{e.t}</div>)}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ══ SÉLECTEUR DE DIFFICULTÉ ══ */}
+    {diffSel&&(
+      <div style={{position:"fixed",inset:0,background:"#000d",zIndex:65,display:"flex",alignItems:"center",justifyContent:"center",padding:12}} onClick={()=>setDiffSel(false)}>
+        <div style={{background:"#12122a",border:"2px solid #4a90d9",borderRadius:10,padding:12,maxWidth:320,width:"100%"}} onClick={e=>e.stopPropagation()}>
+          <div style={{fontSize:9,color:"#fff",marginBottom:8}}>🔥 Difficulté</div>
+          {DIFFS.map((d,i)=>{
+            const locked=i>gs.diffMax;const cur=i===gs.diff;
+            return(<div key={i} onClick={()=>{if(locked||cur)return;
+                gs.diff=i;gs.route=0;gs.maxRoute=0;gs.wave=0;gs.trIdx=0;gs.gymIdx=0;gs.trainerFight=false;
+                gs.team.forEach(m=>{m.hp=m.maxHp;m.actCd=0;m.mvIdx=0;m.mod={};m.status=null;});
+                spawnWave(gs);gs.log.unshift(`🔥 Difficulté ${d.name} — niveaux ${d.lo}-${d.hi} !`);setDiffSel(false);rr();}}
+              style={{display:"flex",alignItems:"center",gap:8,background:cur?"#1a2a1a":"#16162e",border:`1px solid ${cur?d.col:locked?"#333":"#2a2a4a"}`,borderRadius:6,padding:8,marginBottom:5,opacity:locked?.45:1,cursor:locked||cur?"default":"pointer"}}>
+              <span style={{fontSize:9}}>{locked?"🔒":cur?"▶":"○"}</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:8,color:d.col}}>{d.name}</div>
+                <div style={{fontSize:5,color:"#888"}}>Ennemis Niv.{d.lo}-{d.hi}{locked?" — termine la difficulté précédente":""}</div>
+              </div>
+            </div>);})}
+          <div style={{fontSize:5,color:"#666"}}>Changer de difficulté redémarre la progression des routes (équipe conservée).</div>
+        </div>
+      </div>
+    )}
+
+    {/* ══ CONFIRMATION NOUVELLE PARTIE ══ */}
+    {confirmReset&&(
+      <div style={{position:"fixed",inset:0,background:"#000d",zIndex:75,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
+        <div style={{background:"#12122a",border:"2px solid #e63946",borderRadius:10,padding:14,maxWidth:320,width:"100%",textAlign:"center"}}>
+          <div style={{fontSize:9,color:"#e63946",marginBottom:8}}>⚠️ Nouvelle partie ?</div>
+          <div style={{fontSize:6,color:"#ccc",lineHeight:"12px",marginBottom:10}}>Tu pourras choisir un nouveau starter.<br/><span style={{color:"#4caf50"}}>CONSERVÉS :</span> Succès, Pokédex (rencontres), statistiques à vie.<br/><span style={{color:"#e63946"}}>EFFACÉS :</span> équipe, PC, argent, objets, CT, badges, médailles, progression.</div>
+          <div style={{display:"flex",gap:6,justifyContent:"center"}}>
+            <button className="bt btr" onClick={()=>{
+              const keep={dex:gs.dex,ach:gs.ach,life:gs.life};
+              const fresh=initG();Object.assign(g.current,fresh,{dex:keep.dex,ach:keep.ach,life:keep.life});
+              g.current.log.unshift("🔄 Nouvelle partie ! Choisis ton starter.");
+              try{localStorage.setItem("taskbar-pokemon-save",serialize());}catch(e){}
+              setConfirmReset(false);rr();
+            }}>Oui, recommencer</button>
+            <button className="bt" onClick={()=>setConfirmReset(false)}>Annuler</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ══ ANIMATION D'ÉVOLUTION ══ */}
+    {evo&&<EvoPopup evo={evo} onDone={()=>{g.current.evoShowing=false;setEvo(null);}}/>}
+
+    {/* ══ POPUP INFO (attaques / talents / natures / CT) ══ */}
+    {info&&(
+      <div style={{position:"fixed",inset:0,background:"#000b",zIndex:70,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setInfo(null)}>
+        <div style={{background:"#12122a",border:"2px solid #4a90d9",borderRadius:10,padding:14,maxWidth:340,width:"100%"}} onClick={e=>e.stopPropagation()}>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+            {info.type&&<TypeIcon t={info.type} size={16}/>}
+            <div style={{fontSize:9,color:"#fff",flex:1}}>{info.title}</div>
+            <button className="bt btr" onClick={()=>setInfo(null)}>✕</button>
+          </div>
+          <div style={{fontSize:7,color:"#ccc",lineHeight:"13px"}}>{info.body}</div>
+          {info.extra&&<div style={{fontSize:6,color:"#8a94b8",lineHeight:"11px",marginTop:8,borderTop:"1px solid #2a2a4a",paddingTop:6}}>{info.extra}</div>}
+        </div>
+      </div>
+    )}
+
+    {/* ══ CONFIRMATION RELÂCHER ══ */}
+    {confirmRel!==null&&(()=>{const m=gs.box.find(x=>x.uid===confirmRel);if(!m)return null;const d=DEX[m.sp];return(
+      <div style={{position:"fixed",inset:0,background:"#000c",zIndex:70,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{background:"#12122a",border:"2px solid #e63946",borderRadius:10,padding:14,maxWidth:300,width:"100%",textAlign:"center"}}>
+          <Sprite sp={m.sp} shiny={m.shiny} size={56}/>
+          <div style={{fontSize:8,color:"#fff",margin:"6px 0"}}>Relâcher {m.shiny?"✨":""}{d.name} N.{m.lv} ?</div>
+          <div style={{fontSize:6,color:"#e63946",marginBottom:10}}>⚠️ Il disparaîtra définitivement ! (+{m.lv*15}₽)</div>
+          <div style={{display:"flex",gap:6,justifyContent:"center"}}>
+            <button className="bt btr" onClick={()=>{releaseMon(m.uid);setConfirmRel(null);}}>Oui, relâcher</button>
+            <button className="bt" onClick={()=>setConfirmRel(null)}>Annuler</button>
+          </div>
+        </div>
+      </div>);})()}
+
+    {/* ══ CHOIX DU STARTER ══ */}
+    {gs.team.length===0&&(
+      <div style={{position:"fixed",inset:0,background:"#0d0d1af2",zIndex:60,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14,padding:16}}>
+        <div style={{fontSize:11,color:"#ffd166",textAlign:"center"}}>PROF. CHEN :</div>
+        <div style={{fontSize:8,color:"#ddd",textAlign:"center",lineHeight:"14px"}}>« Choisis ton premier Pokémon ! »</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
+          {[1,4,7].map(sp=>{const d=DEX[sp];return(
+            <div key={sp} onClick={()=>chooseStarter(sp)} style={{background:"#16162e",border:`2px solid ${TC[d.t1]}`,borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",width:104}}>
+              <Sprite sp={sp} size={64}/>
+              <div style={{fontSize:8,color:"#fff",marginTop:6}}>{d.name}</div>
+              <div style={{fontSize:6,marginTop:4}}>
+                <span style={{background:TC[d.t1],color:"#fff",padding:"1px 5px",borderRadius:3}}>{TYPE_FR[d.t1]}</span>
+                {d.t2&&<span style={{background:TC[d.t2],color:"#fff",padding:"1px 5px",borderRadius:3,marginLeft:2}}>{TYPE_FR[d.t2]}</span>}
+              </div>
+              <div style={{fontSize:5,color:"#888",marginTop:5,lineHeight:"9px"}}>{LEARN[sp].slice(0,3).map(([l,mv])=>`N.${l} ${frn(mv)}`).join(" · ")}</div>
+            </div>);})}
+        </div>
+      </div>
+    )}
+
+    {/* ══ PAGE POKÉMON (modal) ══ */}
+    {selMon!==null&&(()=>{
+      const m=[...gs.team,...gs.box].find(x=>x.uid===selMon);
+      if(!m)return null;
+      const d=DEX[m.sp];const st=calcStats(m);
+      const inTeam=gs.team.some(x=>x.uid===selMon);
+      const nat=NAT[m.nature]||{};
+      const natTxt=k=>nat[k]>1?" ▲":nat[k]<1?" ▼":"";
+      const nextXp=xpFor(m.lv+1);
+      const pool=movePool(m,gs.tms);
+      const STATL=[["hp","PV"],["atk","ATK"],["def","DEF"],["spa","SpA"],["spd","SpD"],["spe","VIT"]];
+      return(
+      <div style={{position:"fixed",inset:0,background:"#000c",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:10}} onClick={()=>{setSelMon(null);setMvSlot(null);}}>
+        <div style={{background:"#12122a",border:`2px solid ${m.shiny?"gold":"#4a90d9"}`,borderRadius:10,padding:12,maxWidth:400,width:"100%",maxHeight:"88vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+          {/* header */}
+          <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
+            <Sprite sp={m.sp} shiny={m.shiny} size={72}/>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,color:m.shiny?"gold":"#fff"}}>{m.shiny?"✨":""}{d.name} <span style={{color:"#888",fontSize:8}}>Niv.{m.lv}</span></div>
+              <div style={{fontSize:7,marginTop:3}}>
+                <span style={{background:TC[d.t1],color:"#fff",padding:"1px 5px",borderRadius:3,marginRight:3}}>{TYPE_FR[d.t1]}</span>
+                {d.t2&&<span style={{background:TC[d.t2],color:"#fff",padding:"1px 5px",borderRadius:3}}>{TYPE_FR[d.t2]}</span>}
+              </div>
+              <div style={{fontSize:6,color:"#9c88ff",marginTop:3,cursor:"pointer",textDecoration:"underline"}} onClick={()=>setInfo({title:`Talent : ${m.abi}`,body:abiDesc(m.abi)})}>Talent : {m.abi} ⓘ</div>
+              {m.gender&&<div style={{fontSize:7,color:m.gender==="♂"?"#6890F0":"#F85888"}}>{m.gender} {m.gender==="♂"?"Mâle":"Femelle"}</div>}
+              <div style={{fontSize:6,color:"#aaa",cursor:"pointer",textDecoration:"underline"}} onClick={()=>setInfo({title:`Nature : ${NAT_FR[m.nature]||m.nature}`,body:natDesc(m.nature)})}>Nature : {NAT_FR[m.nature]||m.nature} ⓘ</div>
+              {inTeam&&<div style={{fontSize:6,color:"#4caf50"}}>● En équipe</div>}
+            </div>
+            <button className="bt btr" onClick={()=>{setSelMon(null);setMvSlot(null);}}>✕</button>
+          </div>
+          {/* XP */}
+          {(()=>{const cur=Math.max(0,m.xp-xpFor(m.lv));const need=Math.max(1,xpFor(m.lv+1)-xpFor(m.lv));return(<>
+          <div style={{fontSize:6,color:"#4a90d9",marginBottom:2}}>EXP {cur.toLocaleString()} / {need.toLocaleString()} <span style={{color:"#666"}}>(niveau {m.lv}→{m.lv+1})</span></div>
+          <div style={{background:"#222",height:5,borderRadius:2,marginBottom:8}}><div style={{width:`${Math.min(100,(cur/need)*100)}%`,height:"100%",background:"#4a90d9",borderRadius:2}}/></div>
+          </>);})()}
+          {pensionPick&&(gs.pension.a!==m.uid&&gs.pension.b!==m.uid)&&(
+            <button className="bt btg" style={{width:"100%",padding:7,marginBottom:8,fontSize:7}}
+              onClick={()=>{setPension(pensionPick,m.uid);setPensionPick(null);setSelMon(null);}}>
+              🏠 Mettre en Pension — Parent {pensionPick.toUpperCase()}
+            </button>
+          )}
+          {/* stats + IV/EV */}
+          <div style={{fontSize:7,color:"#ffd166",marginBottom:4}}>📊 Statistiques</div>
+          <div style={{display:"grid",gridTemplateColumns:"34px 34px 1fr 46px 40px",gap:3,alignItems:"center",fontSize:6,marginBottom:8}}>
+            <span style={{color:"#666"}}>Stat</span><span style={{color:"#666"}}>Val.</span><span style={{color:"#666"}}>IV</span><span style={{color:"#666"}}>IV/31</span><span style={{color:"#666"}}>EV</span>
+            {STATL.map(([k,l])=>(<React.Fragment key={k}>
+              <span style={{color:"#ddd"}}>{l}{natTxt(k)}</span>
+              <span style={{color:"#fff"}}>{k==="hp"?`${m.hp}/${st.hp}`:st[k]}</span>
+              <div style={{background:"#222",height:5,borderRadius:2}}><div style={{width:`${(m.iv[k]/31)*100}%`,height:"100%",borderRadius:2,background:m.iv[k]>25?"#4caf50":m.iv[k]>15?"#ffd166":"#e63946"}}/></div>
+              <span style={{color:m.iv[k]>25?"#4caf50":"#aaa"}}>{m.iv[k]}/31</span>
+              <span style={{color:m.ev[k]>0?"#7ec8e3":"#555"}}>{m.ev[k]}</span>
+            </React.Fragment>))}
+          </div>
+          <div style={{fontSize:5,color:"#666",marginBottom:8}}>Total IV : {Object.values(m.iv).reduce((a,b)=>a+b,0)}/186 · Total EV : {Object.values(m.ev).reduce((a,b)=>a+b,0)}/510 · ▲▼ = nature</div>
+          {(()=>{
+            const weak=[],res=[],imm=[];
+            Object.keys(TC).forEach(T=>{const mult=tEff(T,d.t1,d.t2);
+              if(mult>=2)weak.push([T,mult]);else if(mult===0)imm.push(T);else if(mult<1)res.push([T,mult]);});
+            const chip=(T,x)=>(<span key={T} style={{background:TC[T],color:"#fff",fontSize:5,padding:"1px 4px",borderRadius:3,marginRight:2,marginBottom:2,display:"inline-block"}}>{TYPE_FR[T]}{x?` ×${x}`:""}</span>);
+            return(<div style={{marginBottom:8}}>
+              <div style={{fontSize:7,color:"#ffd166",marginBottom:3}}>⚖️ Table des types</div>
+              <div style={{fontSize:5,color:"#e63946",marginBottom:2}}>Faiblesses : {weak.length?weak.map(([T,x])=>chip(T,x)):"aucune"}</div>
+              <div style={{fontSize:5,color:"#4caf50",marginBottom:2}}>Résistances : {res.length?res.map(([T,x])=>chip(T,x)):"aucune"}</div>
+              {imm.length>0&&<div style={{fontSize:5,color:"#8a94b8"}}>Immunités : {imm.map(T=>chip(T,0))}</div>}
+            </div>);})()}
+          {/* Objet tenu */}
+          <div style={{fontSize:7,color:"#ffd166",marginBottom:4}}>🎒 Objet tenu</div>
+          {m.item?(
+            <div style={{display:"flex",alignItems:"center",gap:6,background:"#1a1a34",border:"1px solid #9c88ff",borderRadius:5,padding:6,marginBottom:6}}>
+              <div style={{flex:1}}><div style={{fontSize:7,color:"#9c88ff"}}>{HELD[m.item].name}</div><div style={{fontSize:5,color:"#888"}}>{HELD[m.item].desc}</div></div>
+              <button className="bt btr" onClick={()=>unequipHeld(m.uid)}>Retirer</button>
+            </div>
+          ):<div style={{fontSize:6,color:"#555",marginBottom:6}}>Aucun objet tenu.</div>}
+          {gs.heldInv.length>0&&<div style={{marginBottom:8}}>
+            <div style={{fontSize:5,color:"#888",marginBottom:3}}>Inventaire ({gs.heldInv.length}) — toucher pour équiper :</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+              {gs.heldInv.map((hid,i)=>(<button key={i} className="bt" onClick={()=>equipHeld(m.uid,hid)} title={HELD[hid].desc}>{HELD[hid].name}</button>))}
+            </div>
+          </div>}
+          {/* Attaques — s'enchaînent dans l'ORDRE, cadence liée à la Vitesse */}
+          <div style={{fontSize:7,color:"#ffd166",marginBottom:2}}>⚔️ Attaques (ordre d'enchaînement)</div>
+          <div style={{fontSize:5,color:"#888",marginBottom:4}}>Elles se déclenchent l'une après l'autre, de haut en bas. ▲▼ pour réordonner · nom pour les détails · ⇄ pour remplacer.</div>
+          {m.moves.map((mv,i)=>{
+            const md=MV[mv]||[0,"Normal",2500];
+            const isNext=i===(m.mvIdx%m.moves.length);
+            const chg=isNext&&m.actMax?Math.max(0,Math.min(1,1-(m.actCd/m.actMax))):0;
+            return(
+            <div key={i} style={{position:"relative",overflow:"hidden",display:"flex",alignItems:"center",gap:5,background:"#1a1a34",border:`1px solid ${isNext?"#ffd166":TC[md[1]]+"66"}`,borderRadius:5,padding:"4px 6px",marginBottom:3}}>
+              {isNext&&<div style={{position:"absolute",left:0,top:0,bottom:0,width:`${chg*100}%`,background:"#ffd16622",pointerEvents:"none"}}/>}
+              <span style={{fontSize:6,color:isNext?"#ffd166":"#666",width:10}}>{isNext?"▶":`${i+1}.`}</span>
+              <TypeIcon t={md[1]} size={13}/>
+              <span style={{fontSize:7,color:"#fff",flex:1,cursor:"pointer",textDecoration:"underline"}} onClick={()=>setInfo({title:frn(mv),type:md[1],body:mvDesc(mv)})}>{frn(mv)}</span>
+              <span style={{fontSize:5,color:"#aaa"}}>{md[0]>0?`P.${md[0]}`:"St"}</span>
+              <button className="bt" style={{padding:"2px 4px"}} disabled={i===0} onClick={()=>{if(i>0){[m.moves[i-1],m.moves[i]]=[m.moves[i],m.moves[i-1]];m.mvIdx=0;rr();}}}>▲</button>
+              <button className="bt" style={{padding:"2px 4px"}} disabled={i===m.moves.length-1} onClick={()=>{if(i<m.moves.length-1){[m.moves[i+1],m.moves[i]]=[m.moves[i],m.moves[i+1]];m.mvIdx=0;rr();}}}>▼</button>
+              <button className="bt btg" style={{padding:"2px 4px"}} onClick={()=>setMvSlot(mvSlot===i?null:i)}>⇄</button>
+            </div>);})}
+          {mvSlot!==null&&<div style={{background:"#0d0d20",border:"1px solid #4caf50",borderRadius:5,padding:6,marginTop:4}}>
+            <div style={{fontSize:5,color:"#4caf50",marginBottom:4}}>{mvSlot<m.moves.length?`Remplacer ${frn(m.moves[mvSlot])} par :`:"Apprendre :"}</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+              {pool.filter(p=>!m.moves.includes(p)).map(p=>{const md=MV[p];return(
+                <button key={p} className="bt" style={{borderColor:TC[md[1]],color:TC[md[1]]}} onClick={()=>setMove(m.uid,mvSlot,p)}>{frn(p)} ({md[0]>0?md[0]:"St"})</button>);})}
+            </div>
+          </div>}
+        </div>
+      </div>);
+    })()}
+  </div>);
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
